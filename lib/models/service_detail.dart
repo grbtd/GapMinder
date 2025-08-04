@@ -2,22 +2,20 @@
 class CallingPoint {
   final String stationName;
   final String crsCode;
+  final String platform;
   final bool isCancelled;
   final String? serviceLocation;
-  final String platform;
-  // **REVISED**: Using specific, nullable time fields for clarity and robustness
   final String? scheduledArrival;
   final String? realtimeArrival;
   final String? scheduledDeparture;
   final String? realtimeDeparture;
 
-
   CallingPoint({
     required this.stationName,
     required this.crsCode,
+    this.platform = 'N/A',
     this.isCancelled = false,
     this.serviceLocation,
-    this.platform = 'N/A',
     this.scheduledArrival,
     this.realtimeArrival,
     this.scheduledDeparture,
@@ -31,7 +29,6 @@ class CallingPoint {
       isCancelled: json['isCancelled'] ?? false,
       serviceLocation: json['serviceLocation'],
       platform: json['platform'] ?? 'TBC',
-      // **REVISED**: Parsing specific time fields directly from the JSON
       scheduledArrival: json['gbttBookedArrival'],
       realtimeArrival: json['realtimeArrival'],
       scheduledDeparture: json['gbttBookedDeparture'],
@@ -48,6 +45,8 @@ class ServiceDetail {
   final String atocName;
   final String origin;
   final String destination;
+  // **NEW**: Added serviceType field
+  final String serviceType;
 
   ServiceDetail({
     required this.trainIdentity,
@@ -56,6 +55,7 @@ class ServiceDetail {
     required this.atocName,
     required this.origin,
     required this.destination,
+    required this.serviceType,
   });
 
   factory ServiceDetail.fromJson(Map<String, dynamic> json) {
@@ -85,6 +85,8 @@ class ServiceDetail {
       atocName: json['atocName'] ?? 'Unknown Operator',
       origin: originName,
       destination: destinationName,
+      // **NEW**: Parse the serviceType from the main service object
+      serviceType: json['serviceType'] ?? 'train',
     );
   }
 }

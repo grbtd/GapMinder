@@ -245,42 +245,31 @@ class _HomePageState extends State<HomePage> {
               itemCount: _departures.length,
               itemBuilder: (context, index) {
                 final departure = _departures[index];
-
-                // **NEW**: Handle passing trains differently
-                if (departure.isPassing) {
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 5.0),
-                    child: ListTile(
-                      title: Text("To: ${departure.destination}"),
-                      subtitle: Text("${departure.operatorName} service"),
-                      leading: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(departure.expectedTime, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.grey[400])),
-                          const Text("Passing", style: TextStyle(fontStyle: FontStyle.italic)),
-                        ],
-                      ),
-                      trailing: Icon(Icons.arrow_forward, color: Colors.grey[400]),
-                      onTap: () => _fetchServiceDetails(departure),
-                    ),
-                  );
-                }
-
-                // Existing logic for stopping trains
                 final isLate = departure.expectedTime.compareTo(departure.scheduledTime) > 0;
                 final showScheduled = departure.expectedTime != departure.scheduledTime;
 
-                Widget platformWidget = Text(
-                  "Plat: ${departure.platform}",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: departure.platformChanged ? Colors.orange : null,
-                  ),
-                );
-
-                if (departure.platformChanged) {
-                  platformWidget = BlinkingWidget(child: platformWidget);
+                // **REVISED**: Conditionally build the trailing widget based on service type
+                Widget trailingWidget;
+                if (departure.serviceType == 'bus') {
+                  trailingWidget = const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.directions_bus),
+                      Text("Bus", style: TextStyle(fontSize: 12)),
+                    ],
+                  );
+                } else {
+                  trailingWidget = Text(
+                    "Plat: ${departure.platform}",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: departure.platformChanged ? Colors.orange : null,
+                    ),
+                  );
+                  if (departure.platformChanged) {
+                    trailingWidget = BlinkingWidget(child: trailingWidget);
+                  }
                 }
 
                 return Card(
@@ -301,7 +290,7 @@ class _HomePageState extends State<HomePage> {
                         if(showScheduled) Text(departure.scheduledTime, style: const TextStyle(decoration: TextDecoration.lineThrough, fontSize: 12)),
                       ],
                     ),
-                    trailing: platformWidget,
+                    trailing: trailingWidget,
                     onTap: () => _fetchServiceDetails(departure),
                   ),
                 );
@@ -473,7 +462,12 @@ class _HomePageState extends State<HomePage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Expanded(child: Container(width: 2, color: Colors.grey)),
-                        Icon(Icons.train, color: Theme.of(context).colorScheme.primary, size: 28),
+                        // **REVISED**: Show bus icon if service type is bus
+                        Icon(
+                            _selectedService!.serviceType == 'bus' ? Icons.directions_bus : Icons.train,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 28
+                        ),
                         Expanded(child: Container(width: 2, color: Colors.grey)),
                       ],
                     ),

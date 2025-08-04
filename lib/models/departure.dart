@@ -9,8 +9,8 @@ class Departure {
   final String operatorName;
   final String? serviceLocation;
   final bool platformChanged;
-  // **NEW**: Added isPassing flag
-  final bool isPassing;
+  // **NEW**: Added serviceType field
+  final String serviceType;
 
   Departure({
     required this.serviceUid,
@@ -22,7 +22,7 @@ class Departure {
     required this.operatorName,
     this.serviceLocation,
     this.platformChanged = false,
-    this.isPassing = false,
+    this.serviceType = 'train',
   });
 
   factory Departure.fromJson(Map<String, dynamic> json) {
@@ -44,13 +44,13 @@ class Departure {
       runDate: json['runDate'] ?? '',
       destination: dest,
       scheduledTime: locationDetail?['gbttBookedDeparture'] ?? 'N/A',
-      expectedTime: locationDetail?['realtimeDeparture'] ?? locationDetail?['realtimePass'] ?? locationDetail?['gbttBookedDeparture'] ?? 'N/A',
+      expectedTime: locationDetail?['realtimeDeparture'] ?? locationDetail?['gbttBookedDeparture'] ?? 'N/A',
       platform: locationDetail?['platform'] ?? 'TBC',
       operatorName: json['atocName'] ?? 'N/A',
       serviceLocation: locationDetail?['serviceLocation'],
       platformChanged: locationDetail?['platformChanged'] ?? false,
-      // **NEW**: A service is passing if it does not make a public call.
-      isPassing: locationDetail?['isCallPublic'] == false,
+      // **NEW**: Parse the serviceType from the main service object
+      serviceType: json['serviceType'] ?? 'train',
     );
   }
 }

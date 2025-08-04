@@ -3,16 +3,16 @@ import 'screens/home_page.dart';
 
 // --- Main App Entry Point ---
 void main() {
-  runApp(const TrainTimesApp());
+  runApp(const GapMinderApp());
 }
 
-class TrainTimesApp extends StatelessWidget {
-  const TrainTimesApp({super.key});
+class GapMinderApp extends StatelessWidget {
+  const GapMinderApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Train Times',
+      title: 'GapMinder',
       theme: ThemeData(
         brightness: Brightness.light,
         primarySwatch: Colors.indigo,
