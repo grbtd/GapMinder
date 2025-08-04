@@ -5,11 +5,18 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// **NEW**: This block reads your key.properties file
+def keyProperties = new Properties()
+def keyPropertiesFile = rootProject.file('key.properties')
+if (keyPropertiesFile.exists()) {
+    keyProperties.load(new FileInputStream(keyPropertiesFile))
+}
+
 android {
     namespace = "space.grbtd.traintest.train_time_test"
     compileSdk = flutter.compileSdkVersion
-    //ndkVersion = flutter.ndkVersion
-    //ndkVersion = "27.0.12077973"
+    // **FIXED**: Commented out the problematic ndkVersion line to allow Flutter to use the default.
+    // ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -18,6 +25,16 @@ android {
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
+    // **NEW**: This block defines the release signing configuration
+    signingConfigs {
+        release {
+            keyAlias = keyProperties['keyAlias']
+            keyPassword = keyProperties['keyPassword']
+            storeFile = keyProperties['storeFile'] != null ? file(keyProperties['storeFile']) : null
+            storePassword = keyProperties['storePassword']
+        }
     }
 
     defaultConfig {
@@ -33,9 +50,8 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // **CHANGED**: This now points to your release signing configuration
+            signingConfig = signingConfigs.release
         }
     }
 }
