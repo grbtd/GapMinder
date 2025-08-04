@@ -44,6 +44,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _searchController = TextEditingController();
   List<Station> _searchResults = [];
   final GlobalKey<CountdownTimerState> _countdownKey = GlobalKey();
+  bool _groupByPlatform = false;
 
 
   // --- initState & dispose ---
@@ -139,12 +140,17 @@ class _HomePageState extends State<HomePage> {
         )
       ]
           : [
-        if (_selectedStation == null && !_isLoading)
+        // **REVISED**: Search is now available on all screens
+        if (!_isLoading)
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () {
+              _stopAutoRefresh();
               setState(() {
                 _isSearching = true;
+                _selectedStation = null;
+                _selectedService = null;
+                _departures = [];
               });
             },
           ),
@@ -153,6 +159,17 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.refresh),
             onPressed: _findNearbyStations,
             tooltip: 'Refresh Stations',
+          ),
+        if (_selectedStation != null && _selectedService == null && !_isLoading)
+          IconButton(
+            // **REVISED**: Using more intuitive icons for the toggle
+            icon: Icon(_groupByPlatform ? Icons.access_time : Icons.view_module),
+            tooltip: _groupByPlatform ? "Sort by Time" : "Group by Platform",
+            onPressed: () {
+              setState(() {
+                _groupByPlatform = !_groupByPlatform;
+              });
+            },
           ),
         if (_selectedStation != null && !_isLoading)
           Padding(
@@ -229,76 +246,169 @@ class _HomePageState extends State<HomePage> {
     return _buildStationsList("Search Results", stations: _searchResults);
   }
 
-  // --- Builds the list of departures for the selected station ---
+  // Extracted the departure card into its own widget builder for clarity
+  Widget _buildDepartureCard(Departure departure) {
+    final isLate = departure.expectedTime.compareTo(departure.scheduledTime) > 0;
+    final showScheduled = departure.expectedTime != departure.scheduledTime;
+
+    Widget trailingWidget;
+    if (departure.serviceType == 'bus') {
+      trailingWidget = const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.directions_bus),
+          Text("Bus", style: TextStyle(fontSize: 12)),
+        ],
+      );
+    } else {
+      trailingWidget = Text(
+        "Plat: ${departure.platform}",
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: departure.platformChanged ? Colors.orange : null,
+        ),
+      );
+      if (departure.platformChanged) {
+        trailingWidget = BlinkingWidget(child: trailingWidget);
+      }
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 5.0, horizontal: 2.0),
+      child: InkWell(
+        onTap: () => _fetchServiceDetails(departure),
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(departure.expectedTime, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isLate ? Colors.redAccent : Colors.lightGreenAccent)),
+                  if (showScheduled) Text(departure.scheduledTime, style: const TextStyle(decoration: TextDecoration.lineThrough, fontSize: 12)),
+                ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("To: ${departure.destination}", style: Theme.of(context).textTheme.titleMedium),
+                    Text("${departure.operatorName} service"),
+                    _buildStatusTag(departure.serviceLocation),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              trailingWidget,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // This widget now handles both grouped and chronological views, with responsive layouts.
   Widget _buildDeparturesList() {
     if (_isLoading && _departures.isEmpty) return const Center(child: CircularProgressIndicator());
+    if (_departures.isEmpty) return const Center(child: Text("No departures found."));
 
-    return Column(
-      children: [
-        if (_departures.isEmpty)
-          const Expanded(
-              child: Center(child: Text("No departures found."))
-          )
-        else
-          Expanded(
-            child: ListView.builder(
-              itemCount: _departures.length,
-              itemBuilder: (context, index) {
-                final departure = _departures[index];
-                final isLate = departure.expectedTime.compareTo(departure.scheduledTime) > 0;
-                final showScheduled = departure.expectedTime != departure.scheduledTime;
+    if (_groupByPlatform) {
+      // --- Grouped by Platform View ---
+      Map<String, List<Departure>> groupedDepartures = {};
+      for (var d in _departures) {
+        String key = d.serviceType == 'bus' ? 'Bus Services' : 'Platform ${d.platform}';
+        if (groupedDepartures[key] == null) {
+          groupedDepartures[key] = [];
+        }
+        groupedDepartures[key]!.add(d);
+      }
 
-                // **REVISED**: Conditionally build the trailing widget based on service type
-                Widget trailingWidget;
-                if (departure.serviceType == 'bus') {
-                  trailingWidget = const Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+      var sortedKeys = groupedDepartures.keys.toList()
+        ..sort((a, b) {
+          if (a.startsWith('Bus')) return 1;
+          if (b.startsWith('Bus')) return -1;
+          var numA = int.tryParse(a.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+          var numB = int.tryParse(b.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+          return numA.compareTo(numB);
+        });
+
+      return LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth > 800) {
+              return SingleChildScrollView(
+                child: Wrap(
+                  spacing: 16.0, // Horizontal space between columns
+                  runSpacing: 16.0, // Vertical space between rows
+                  children: sortedKeys.map((key) {
+                    List<Departure> group = groupedDepartures[key]!;
+                    return Container(
+                      width: 350, // Fixed width for each platform column
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
+                            child: Text(key, style: Theme.of(context).textTheme.headlineSmall),
+                          ),
+                          ...group.take(3).map((d) => _buildDepartureCard(d)).toList(),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              );
+            } else {
+              // The existing vertical layout for narrow screens
+              return ListView.builder(
+                itemCount: sortedKeys.length,
+                itemBuilder: (context, index) {
+                  String key = sortedKeys[index];
+                  List<Departure> group = groupedDepartures[key]!;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.directions_bus),
-                      Text("Bus", style: TextStyle(fontSize: 12)),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16.0, bottom: 8.0, left: 4.0),
+                        child: Text(key, style: Theme.of(context).textTheme.headlineSmall),
+                      ),
+                      ...group.take(3).map((d) => _buildDepartureCard(d)).toList(),
                     ],
                   );
-                } else {
-                  trailingWidget = Text(
-                    "Plat: ${departure.platform}",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: departure.platformChanged ? Colors.orange : null,
-                    ),
-                  );
-                  if (departure.platformChanged) {
-                    trailingWidget = BlinkingWidget(child: trailingWidget);
-                  }
-                }
-
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 5.0),
-                  child: ListTile(
-                    title: Text("To: ${departure.destination}"),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("${departure.operatorName} service"),
-                        _buildStatusTag(departure.serviceLocation),
-                      ],
-                    ),
-                    leading: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(departure.expectedTime, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isLate ? Colors.redAccent : Colors.lightGreenAccent)),
-                        if(showScheduled) Text(departure.scheduledTime, style: const TextStyle(decoration: TextDecoration.lineThrough, fontSize: 12)),
-                      ],
-                    ),
-                    trailing: trailingWidget,
-                    onTap: () => _fetchServiceDetails(departure),
-                  ),
-                );
+                },
+              );
+            }
+          }
+      );
+    } else {
+      // --- Chronological View (default) ---
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth > 600) {
+            return GridView.builder(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 450,
+                childAspectRatio: 4,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemCount: _departures.length,
+              itemBuilder: (context, index) {
+                return _buildDepartureCard(_departures[index]);
               },
-            ),
-          ),
-      ],
-    );
+            );
+          } else {
+            return ListView.builder(
+              itemCount: _departures.length,
+              itemBuilder: (context, index) {
+                return _buildDepartureCard(_departures[index]);
+              },
+            );
+          }
+        },
+      );
+    }
   }
 
   // Helper function to get the status text and color from serviceLocation
@@ -462,7 +572,6 @@ class _HomePageState extends State<HomePage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Expanded(child: Container(width: 2, color: Colors.grey)),
-                        // **REVISED**: Show bus icon if service type is bus
                         Icon(
                             _selectedService!.serviceType == 'bus' ? Icons.directions_bus : Icons.train,
                             color: Theme.of(context).colorScheme.primary,

@@ -9,7 +9,6 @@ class Departure {
   final String operatorName;
   final String? serviceLocation;
   final bool platformChanged;
-  // **NEW**: Added serviceType field
   final String serviceType;
 
   Departure({
@@ -49,7 +48,6 @@ class Departure {
       operatorName: json['atocName'] ?? 'N/A',
       serviceLocation: locationDetail?['serviceLocation'],
       platformChanged: locationDetail?['platformChanged'] ?? false,
-      // **NEW**: Parse the serviceType from the main service object
       serviceType: json['serviceType'] ?? 'train',
     );
   }
