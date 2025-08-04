@@ -1,4 +1,4 @@
-name: train_time_test
+name: gapminder
 description: "A Test App to See Nearby Train Times"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
