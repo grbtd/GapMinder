@@ -64,10 +64,12 @@ class _HomePageState extends State<HomePage> {
   // --- UI Build Method ---
   @override
   Widget build(BuildContext context) {
+    final bool canPopApp = !(_isSearching || _selectedService != null || _selectedStation != null);
+
     return PopScope(
-      canPop: false,
+      canPop: canPopApp,
       onPopInvoked: (didPop) {
-        if (didPop) return;
+        if (didPop || !mounted) return;
         _handleBackButton();
       },
       child: Scaffold(
@@ -140,7 +142,6 @@ class _HomePageState extends State<HomePage> {
         )
       ]
           : [
-        // **REVISED**: Search is now available on all screens
         if (!_isLoading)
           IconButton(
             icon: const Icon(Icons.search),
@@ -162,7 +163,6 @@ class _HomePageState extends State<HomePage> {
           ),
         if (_selectedStation != null && _selectedService == null && !_isLoading)
           IconButton(
-            // **REVISED**: Using more intuitive icons for the toggle
             icon: Icon(_groupByPlatform ? Icons.access_time : Icons.view_module),
             tooltip: _groupByPlatform ? "Sort by Time" : "Group by Platform",
             onPressed: () {
@@ -339,12 +339,12 @@ class _HomePageState extends State<HomePage> {
             if (constraints.maxWidth > 800) {
               return SingleChildScrollView(
                 child: Wrap(
-                  spacing: 16.0, // Horizontal space between columns
-                  runSpacing: 16.0, // Vertical space between rows
+                  spacing: 16.0,
+                  runSpacing: 16.0,
                   children: sortedKeys.map((key) {
                     List<Departure> group = groupedDepartures[key]!;
                     return Container(
-                      width: 350, // Fixed width for each platform column
+                      width: 350,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -360,7 +360,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               );
             } else {
-              // The existing vertical layout for narrow screens
               return ListView.builder(
                 itemCount: sortedKeys.length,
                 itemBuilder: (context, index) {
@@ -542,24 +541,12 @@ class _HomePageState extends State<HomePage> {
       final bool isTrainInTransitHere = i == lastDepartedIndex && i < _selectedService!.locations.length - 1;
       if (isTrainInTransitHere) {
         String delayText = "On time";
-        if (point.realtimeDeparture != null && point.scheduledDeparture != null) {
-          try {
-            final scheduledString = point.scheduledDeparture!;
-            final actualString = point.realtimeDeparture!;
-
-            final scheduled = DateFormat("HH:mm").parse("${scheduledString.substring(0, 2)}:${scheduledString.substring(2, 4)}");
-            final actual = DateFormat("HH:mm").parse("${actualString.substring(0, 2)}:${actualString.substring(2, 4)}");
-
-            final difference = actual.difference(scheduled).inMinutes;
-
-            if (difference > 0) {
-              delayText = "$difference min late";
-            } else if (difference < 0) {
-              delayText = "${difference.abs()} min early";
-            }
-          } catch(e) {
-            // Silently ignore if parsing fails
-          }
+        // **REVISED**: Use the direct lateness value from the API for accuracy.
+        final lateness = point.departureLateness;
+        if (lateness > 0) {
+          delayText = "$lateness min late";
+        } else if (lateness < 0) {
+          delayText = "${lateness.abs()} min early";
         }
 
         timelineItems.add(
@@ -702,9 +689,8 @@ class _HomePageState extends State<HomePage> {
         _selectedStation = null;
         _departures = [];
       });
-    } else {
-      Navigator.of(context).pop();
     }
+    // No final else, PopScope handles closing the app
   }
 
   Future<void> _findNearbyStations() async {

@@ -9,6 +9,8 @@ class CallingPoint {
   final String? realtimeArrival;
   final String? scheduledDeparture;
   final String? realtimeDeparture;
+  // **NEW**: Added departureLateness field for accurate in-transit status
+  final int departureLateness;
 
   CallingPoint({
     required this.stationName,
@@ -20,6 +22,7 @@ class CallingPoint {
     this.realtimeArrival,
     this.scheduledDeparture,
     this.realtimeDeparture,
+    this.departureLateness = 0,
   });
 
   factory CallingPoint.fromJson(Map<String, dynamic> json) {
@@ -33,6 +36,8 @@ class CallingPoint {
       realtimeArrival: json['realtimeArrival'],
       scheduledDeparture: json['gbttBookedDeparture'],
       realtimeDeparture: json['realtimeDeparture'],
+      // **NEW**: Parse the lateness value directly from the API
+      departureLateness: json['realtimeGbttDepartureLateness'] ?? 0,
     );
   }
 }
@@ -45,7 +50,6 @@ class ServiceDetail {
   final String atocName;
   final String origin;
   final String destination;
-  // **NEW**: Added serviceType field
   final String serviceType;
 
   ServiceDetail({
@@ -85,7 +89,6 @@ class ServiceDetail {
       atocName: json['atocName'] ?? 'Unknown Operator',
       origin: originName,
       destination: destinationName,
-      // **NEW**: Parse the serviceType from the main service object
       serviceType: json['serviceType'] ?? 'train',
     );
   }
