@@ -1,16 +1,18 @@
-# train_time_test
+# GapMinder
 
-A Test App to See Nearby Train Times
+An app written in Flutter and Dart to grab nearby rail Departures. 
 
-## Getting Started
+## Building this app
 
-This project is a starting point for a Flutter application.
+To use this app, you will need to have an API account with RealTimeTrains. You can do this [here](https://api.rtt.io).
 
-A few resources to get you started if this is your first Flutter project:
+Once you have your Username and Password, you need to create a `secrets.json` file in `assets`. It should look like this:
+```json
+{
+  "username" : "YOUR_USER_HERE",
+  "password" : "YOUR_PASSWORD_HERE"
+}
+```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+If you wish to build a Release version, you will need to create a `keys.properties` file, as well as configure your system accordingly.
+This is left as an exercise to the Builder :). 
