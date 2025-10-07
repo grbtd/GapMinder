@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "space.grbtd.traintest" "\0"
-            VALUE "FileDescription", "train_time_test" "\0"
+            VALUE "FileDescription", "GapMinder" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "train_time_test" "\0"
+            VALUE "InternalName", "GapMinder" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 space.grbtd.traintest. All rights reserved." "\0"
-            VALUE "OriginalFilename", "train_time_test.exe" "\0"
-            VALUE "ProductName", "train_time_test" "\0"
+            VALUE "OriginalFilename", "GapMinder.exe" "\0"
+            VALUE "ProductName", "GapMinder" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

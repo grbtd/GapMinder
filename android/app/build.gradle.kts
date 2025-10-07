@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "space.grbtd.traintest.train_time_test"
+    namespace = "space.grbtd.traintest.GapMinder"
     compileSdk = flutter.compileSdkVersion
     //ndkVersion = flutter.ndkVersion
     //ndkVersion = "27.0.12077973"
@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "space.grbtd.traintest.train_time_test"
+        applicationId = "space.grbtd.traintest.GapMinder"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

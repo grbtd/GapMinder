@@ -1,4 +1,4 @@
-package space.grbtd.traintest.train_time_test
+package space.grbtd.traintest.GapMinder
 
 import io.flutter.embedding.android.FlutterActivity
 
