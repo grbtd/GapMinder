@@ -1,54 +1,46 @@
-// Represents a single departing service in the list
 class Departure {
   final String serviceUid;
   final String runDate;
+  final String? scheduledTime; // Nullable
+  final String? realtimeTime; // Nullable
+  final String? platform; // Nullable
+  final String? operatorName; // Nullable
   final String destination;
-  final String scheduledTime;
-  final String expectedTime;
-  final String platform;
-  final String operatorName;
-  final String? serviceLocation;
   final bool platformChanged;
-  final String serviceType;
+  final String? status; // Nullable
+  final String? serviceType; // Nullable
 
   Departure({
     required this.serviceUid,
     required this.runDate,
-    required this.destination,
     required this.scheduledTime,
-    required this.expectedTime,
+    required this.realtimeTime,
     required this.platform,
     required this.operatorName,
-    this.serviceLocation,
-    this.platformChanged = false,
-    this.serviceType = 'train',
+    required this.destination,
+    required this.platformChanged,
+    required this.status,
+    required this.serviceType,
   });
 
   factory Departure.fromJson(Map<String, dynamic> json) {
-    final locationDetail = json['locationDetail'] as Map<String, dynamic>?;
-    String dest = "N/A";
-
-    if (locationDetail != null) {
-      final destinationList = locationDetail['destination'];
-      if (destinationList is List && destinationList.isNotEmpty) {
-        final firstDestination = destinationList.first;
-        if (firstDestination is Map<String, dynamic>) {
-          dest = firstDestination['description'] ?? "N/A";
-        }
-      }
-    }
+    Map<String, dynamic> locationDetail =
+        json['locationDetail'] ?? <String, dynamic>{};
 
     return Departure(
       serviceUid: json['serviceUid'] ?? '',
       runDate: json['runDate'] ?? '',
-      destination: dest,
-      scheduledTime: locationDetail?['gbttBookedDeparture'] ?? 'N/A',
-      expectedTime: locationDetail?['realtimeDeparture'] ?? locationDetail?['gbttBookedDeparture'] ?? 'N/A',
-      platform: locationDetail?['platform'] ?? 'TBC',
-      operatorName: json['atocName'] ?? 'N/A',
-      serviceLocation: locationDetail?['serviceLocation'],
-      platformChanged: locationDetail?['platformChanged'] ?? false,
-      serviceType: json['serviceType'] ?? 'train',
+      // --- UPDATED KEY ---
+      scheduledTime: locationDetail['gbttBookedDeparture'],
+      // --- END UPDATED KEY ---
+      realtimeTime: locationDetail['realtimeDeparture'],
+      platform: locationDetail['platform'],
+      operatorName: json['atocName'],
+      destination: locationDetail['destination']?[0]?['description'] ?? 'Unknown',
+      platformChanged: locationDetail['platformChanged'] ?? false,
+      status: locationDetail['serviceLocation'] ?? (json['trainStatus'] == 'LATE' ? 'LATE' : ''),
+      serviceType: json['serviceType'],
     );
   }
 }
+

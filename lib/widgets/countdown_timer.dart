@@ -1,68 +1,80 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
-// Custom widget for the countdown refresh timer
 class CountdownTimer extends StatefulWidget {
-  final Duration duration;
   final VoidCallback onRefresh;
-  const CountdownTimer({super.key, required this.duration, required this.onRefresh});
+  final Key? key; // Allow passing a key
+
+  const CountdownTimer({this.key, required this.onRefresh}) : super(key: key);
 
   @override
   CountdownTimerState createState() => CountdownTimerState();
 }
 
-class CountdownTimerState extends State<CountdownTimer>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+class CountdownTimerState extends State<CountdownTimer> {
+  Timer? _timer;
+  int _remaining = 60;
+  double _progress = 1.0;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
-    _controller.addListener(() {
-      setState(() {});
+    startTimer();
+  }
+
+  void startTimer() {
+    _timer?.cancel();
+    _remaining = 60;
+    _progress = 1.0;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_remaining > 0) {
+          _remaining--;
+          _progress = _remaining / 60.0;
+        } else {
+          widget.onRefresh();
+          // The refresh action will trigger a rebuild, which calls reset()
+        }
+      });
     });
-    reset();
   }
 
   void reset() {
-    _controller.reset();
-    _controller.reverse(from: 1.0);
+    if (!mounted) return;
+    setState(() {
+      _timer?.cancel();
+      startTimer();
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _timer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.onRefresh,
+      onTap: () {
+        widget.onRefresh();
+        reset();
+      },
       child: SizedBox(
-        width: 40,
-        height: 40,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            CircularProgressIndicator(
-              value: _controller.value,
-              strokeWidth: 2.0,
-              backgroundColor: Colors.grey.withOpacity(0.5),
-            ),
-            Text(
-              (_controller.duration! * _controller.value).inSeconds.ceil().toString(),
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
-          ],
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(
+          value: _progress,
+          strokeWidth: 2.5,
+          // **CHANGE**: Use the theme's primary color
+          color: Theme.of(context).colorScheme.primary,
         ),
       ),
     );
   }
 }
+

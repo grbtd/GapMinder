@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'screens/home_page.dart';
+import 'screens/station_list_screen.dart';
 
-// --- Main App Entry Point ---
 void main() {
   runApp(const GapMinderApp());
 }
@@ -12,24 +11,31 @@ class GapMinderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'GapMinder',
+      title: 'Train Times',
+
+      // Define the light theme based on a seed color
       theme: ThemeData(
-        brightness: Brightness.light,
-        primarySwatch: Colors.indigo,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        cardColor: const Color(0xFF1E1E1E),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1E1E1E),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blueAccent,
+          brightness: Brightness.light,
         ),
+        useMaterial3: true,
       ),
-      themeMode: ThemeMode.dark, // Enforce dark mode
-      home: const HomePage(),
+
+      // Define the dark theme based on a seed color
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blueAccent,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+
+      // Tell Flutter to automatically follow the device's theme
+      themeMode: ThemeMode.system,
+
+      home: const StationListScreen(),
     );
   }
 }
+
