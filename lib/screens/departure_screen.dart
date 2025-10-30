@@ -7,6 +7,7 @@ import '../models/departure.dart';
 import '../models/service_detail.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
+import '../widgets/app_lifecycle_observer.dart'; // <-- 1. IMPORT
 import 'service_detail_screen.dart';
 
 class DepartureScreen extends StatefulWidget {
@@ -42,24 +43,35 @@ class _DepartureScreenState extends State<DepartureScreen> {
     super.dispose();
   }
 
+  // --- 2. ADD THIS METHOD ---
+  void _handleAppResumed() {
+    // App came to foreground, force a refresh and restart timer
+    _loadDepartures(isRefresh: true);
+    _startAutoRefresh();
+  }
+
   void _startAutoRefresh() {
     _refreshTimer?.cancel();
-    _countdownKey.currentState?.reset(); // Reset the visual timer
+    _countdownKey.currentState?.reset();
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      _loadDepartures();
+      _loadDepartures(isRefresh: true);
     });
   }
 
-  Future<void> _loadDepartures() async {
+  Future<void> _loadDepartures({bool isRefresh = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+
+    // Only show loading spinner on initial load
+    if (!isRefresh) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final departures = await _apiService.fetchDepartures(widget.station.crsCode);
@@ -69,13 +81,18 @@ class _DepartureScreenState extends State<DepartureScreen> {
         _departures = departures;
         _groupDepartures();
         _isLoading = false;
+        _error = null; // Clear any previous errors
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = "Failed to load departures: ${e.toString()}";
-        _isLoading = false;
-      });
+      // --- ADDED: Silent refresh logic ---
+      if (!isRefresh || _departures == null) {
+        setState(() {
+          _error = "Failed to load departures: ${e.toString()}";
+          _isLoading = false;
+        });
+      }
+      // --- END ADDED ---
     }
     _countdownKey.currentState?.reset();
   }
@@ -83,15 +100,20 @@ class _DepartureScreenState extends State<DepartureScreen> {
   void _groupDepartures() {
     if (_departures == null) return;
 
-    // 1. Sort platforms numerically, not alphabetically
     final platformPattern = RegExp(r'(\d+)');
     List<String> platforms = _departures!
-        .map((d) => d.platform ?? 'TBC')
+        .map((d) => d.serviceType?.trim().toUpperCase() == 'BUS' ? 'BUS' : (d.platform ?? 'TBC'))
         .where((p) => p.isNotEmpty)
         .toSet()
         .toList();
 
     platforms.sort((a, b) {
+      if (a == b) return 0;
+      if (a == 'BUS') return 1;
+      if (b == 'BUS') return -1;
+      if (a == 'TBC') return 1;
+      if (b == 'TBC') return -1;
+
       final matchA = platformPattern.firstMatch(a);
       final matchB = platformPattern.firstMatch(b);
 
@@ -104,11 +126,12 @@ class _DepartureScreenState extends State<DepartureScreen> {
       return a.compareTo(b);
     });
 
-    // 2. Group departures by sorted platform
     Map<String, List<Departure>> grouped = {};
     for (var platform in platforms) {
       grouped[platform] = _departures!
-          .where((d) => (d.platform ?? 'TBC') == platform)
+          .where((d) =>
+              (d.serviceType?.trim().toUpperCase() == 'BUS' ? 'BUS' : (d.platform ?? 'TBC')) ==
+              platform)
           .toList();
     }
 
@@ -144,7 +167,6 @@ class _DepartureScreenState extends State<DepartureScreen> {
     }
   }
 
-  // +++ ADDED HELPER FUNCTION for formatting status +++
   String _formatStatusText(String status) {
     switch (status) {
       case "LATE": return "LATE";
@@ -155,37 +177,41 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "APPR_STAT": return "APPROACHING";
       case "APPR_PLAT": return "APPROACHING";
       default:
-        return status; // Fallback for unknown statuses
+        return status;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("${widget.station.name} Departures"),
-        actions: [
-          if (_departures != null && _departures!.isNotEmpty)
-            IconButton(
-              icon: Icon(
-                _isGroupingByPlatform ? Icons.access_time : Icons.view_module,
+    // --- 3. WRAP THE SCAFFOLD ---
+    return AppLifecycleObserver(
+      onResumed: _handleAppResumed,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text("${widget.station.name} Departures"),
+          actions: [
+            if (_departures != null && _departures!.isNotEmpty)
+              IconButton(
+                icon: Icon(
+                  _isGroupingByPlatform ? Icons.access_time : Icons.view_module,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isGroupingByPlatform = !_isGroupingByPlatform;
+                  });
+                },
               ),
-              onPressed: () {
-                setState(() {
-                  _isGroupingByPlatform = !_isGroupingByPlatform;
-                });
-              },
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: CountdownTimer(
+                key: _countdownKey,
+                onRefresh: () => _loadDepartures(isRefresh: true),
+              ),
             ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: CountdownTimer(
-              key: _countdownKey,
-              onRefresh: _loadDepartures,
-            ),
-          ),
-        ],
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
@@ -247,8 +273,8 @@ class _DepartureScreenState extends State<DepartureScreen> {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: Wrap(
-              spacing: 16.0, // Horizontal space between columns
-              runSpacing: 16.0, // Vertical space between rows
+              spacing: 16.0,
+              runSpacing: 16.0,
               children: _groupedDepartures.entries.map((entry) {
                 return _buildPlatformColumn(entry.key, entry.value, isWide: true);
               }).toList(),
@@ -268,17 +294,18 @@ class _DepartureScreenState extends State<DepartureScreen> {
   }
 
   Widget _buildPlatformColumn(String platform, List<Departure> departures, {bool isWide = false}) {
-    // Limit to 3 departures per platform in this view
     final limitedDepartures = departures.take(3).toList();
 
     final columnContent = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min, // Ensure column doesn't stretch
+      mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
           child: Text(
-            platform == 'TBC' ? "Platform TBC" : "Platform $platform",
+            platform == 'TBC'
+                ? "Platform TBC"
+                : (platform == 'BUS' ? "Buses" : "Platform $platform"),
             style: Theme.of(context).textTheme.titleLarge,
           ),
         ),
@@ -291,7 +318,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
       return Card(
         margin: EdgeInsets.zero,
         child: SizedBox(
-          width: 350, // Fixed width for each column in the wrap
+          width: 350,
           child: columnContent,
         ),
       );
@@ -316,13 +343,12 @@ class _DepartureScreenState extends State<DepartureScreen> {
         timeColor = Colors.green; // On time
         timeWidget = Text(realtime, style: textTheme.titleMedium?.copyWith(color: timeColor));
       } else {
-        // Check if early or late
         try {
           final sched = DateFormat.Hm().parse(scheduledTime);
           final real = DateFormat.Hm().parse(realtime);
           timeColor = real.isAfter(sched) ? Colors.red : Colors.green;
         } catch (e) {
-          timeColor = Colors.red; // Default to late if parsing fails
+          timeColor = Colors.red;
         }
 
         timeWidget = Column(
@@ -346,9 +372,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
     }
 
     Widget platformWidget;
-    // --- UPDATED LOGIC for Bus ---
-    if (departure.serviceType == "BUS") {
-      // --- END UPDATED LOGIC ---
+    if (departure.serviceType?.trim().toUpperCase() == "BUS") {
       platformWidget = const Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -424,7 +448,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
   Widget _buildStatusTag(String status) {
     Color tagColor;
-    String statusText = _formatStatusText(status); // +++ USE HELPER +++
+    String statusText = _formatStatusText(status);
 
     switch (status) {
       case "LATE":
@@ -452,7 +476,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
         border: Border.all(color: tagColor, width: 1),
       ),
       child: Text(
-        statusText, // +++ USE FORMATTED TEXT +++
+        statusText,
         style: TextStyle(
           color: tagColor,
           fontWeight: FontWeight.bold,
@@ -462,4 +486,3 @@ class _DepartureScreenState extends State<DepartureScreen> {
     );
   }
 }
-

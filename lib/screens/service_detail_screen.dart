@@ -6,6 +6,7 @@ import '../models/station.dart';
 import '../models/departure.dart';
 import '../models/service_detail.dart';
 import '../widgets/countdown_timer.dart';
+import '../widgets/app_lifecycle_observer.dart'; // <-- 1. IMPORT
 
 class ServiceDetailScreen extends StatefulWidget {
   final Station station;
@@ -21,6 +22,7 @@ class ServiceDetailScreen extends StatefulWidget {
   State<ServiceDetailScreen> createState() => _ServiceDetailScreenState();
 }
 
+// --- 2. REMOVE WidgetsBindingObserver ---
 class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   final RealtimeTrainsService _apiService = RealtimeTrainsService();
   final GlobalKey<CountdownTimerState> _countdownKey = GlobalKey<CountdownTimerState>();
@@ -39,14 +41,24 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     super.initState();
     _fetchServiceDetails();
     _startAutoRefresh();
+    // --- 3. REMOVE observer ---
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
     _scrollController.dispose();
+    // --- 4. REMOVE observer ---
     super.dispose();
   }
+
+  // --- 5. ADD this method ---
+  void _handleAppResumed() {
+    _fetchServiceDetails(isRefresh: true);
+    _startAutoRefresh();
+  }
+
+  // --- 6. REMOVE didChangeAppLifecycleState ---
 
   void _startAutoRefresh() {
     _refreshTimer?.cancel();
@@ -81,6 +93,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         _serviceDetail = serviceDetail;
         _trainPositionIndex = _findTrainPositionIndex(serviceDetail);
         _isLoading = false;
+        _error = null;
       });
 
       if (!isRefresh) {
@@ -98,10 +111,12 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = "Failed to load service details: ${e.toString()}";
-        _isLoading = false;
-      });
+      if (!isRefresh || _serviceDetail == null) {
+        setState(() {
+          _error = "Failed to load service details: ${e.toString()}";
+          _isLoading = false;
+        });
+      }
     }
     _countdownKey.currentState?.reset();
   }
@@ -164,20 +179,24 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       titleWidget = Text("Loading service...");
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: titleWidget,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: CountdownTimer(
-              key: _countdownKey,
-              onRefresh: () => _fetchServiceDetails(isRefresh: true),
+    // --- 7. WRAP THE SCAFFOLD ---
+    return AppLifecycleObserver(
+      onResumed: _handleAppResumed,
+      child: Scaffold(
+        appBar: AppBar(
+          title: titleWidget,
+          actions: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: CountdownTimer(
+                key: _countdownKey,
+                onRefresh: () => _fetchServiceDetails(isRefresh: true),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
@@ -376,8 +395,6 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
                 ),
                 Icon(circleIcon, color: circleColor, size: 24),
-                // --- UPDATED LOGIC ---
-                // Only draw the bottom divider if it's NOT the final destination
                 if (!isFinalDestination)
                   Expanded(
                     child: VerticalDivider(
@@ -386,10 +403,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     ),
                   )
                 else
-                // If it is the final destination, add an empty Expanded to
-                // ensure the IntrinsicHeight behaves correctly, but draw no line.
                   const Expanded(child: SizedBox.shrink()),
-                // --- END UPDATED LOGIC ---
               ],
             ),
           ),
