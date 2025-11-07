@@ -15568,5 +15568,173 @@
       "station_name": "Lintley",
       "latitude": 54.853558347,
       "longitude": -2.4883171256
+    },
+    {
+      "3alpha": "MNS",
+      "station_name": "Maghull North",
+      "latitude": 53.5167,
+      "longitude": -2.9213
+    },
+    {
+      "3alpha": "MRW",
+      "station_name": "Meridian Water",
+      "latitude": 51.609954,
+      "longitude": -0.050128
+    },
+    {
+      "3alpha": "RRN",
+      "station_name": "Robroyston",
+      "latitude": 55.8875,
+      "longitude": -4.1722
+    },
+    {
+      "3alpha": "WAW",
+      "station_name": "Warrington West",
+      "latitude": 53.3936,
+      "longitude": -2.6369
+    },
+    {
+      "3alpha": "HRE",
+      "station_name": "Horden",
+      "latitude": 54.7639,
+      "longitude": -1.3072
+    },
+    {
+      "3alpha": "KTR",
+      "station_name": "Kintore",
+      "latitude": 57.2436,
+      "longitude": -2.3503
+    },
+    {
+      "3alpha": "WOP",
+      "station_name": "Worcestershire Parkway",
+      "latitude": 52.1556,
+      "longitude": -2.1609
+    },
+    {
+      "3alpha": "BOW",
+      "station_name": "Bow Street",
+      "latitude": 52.4400,
+      "longitude": -4.0303
+    },
+    {
+      "3alpha": "OKE",
+      "station_name": "Okehampton",
+      "latitude": 50.7325,
+      "longitude": -3.9964
+    },
+    {
+      "3alpha": "SOJ",
+      "station_name": "Soham",
+      "latitude": 52.33415,
+      "longitude": 0.32770
+    },
+    {
+      "3alpha": "BGV",
+      "station_name": "Barking Riverside",
+      "latitude": 51.519108,
+      "longitude": 0.114764
+    },
+    {
+      "3alpha": "RSN",
+      "station_name": "Reston",
+      "latitude": 55.8506,
+      "longitude": -2.1972
+    },
+    {
+      "3alpha": "BCZ",
+      "station_name": "Brent Cross West",
+      "latitude": 51.5687,
+      "longitude": -0.2269
+    },
+    {
+      "3alpha": "ELT",
+      "station_name": "East Linton",
+      "latitude": 55.9856,
+      "longitude": -2.6579
+    },
+    {
+      "3alpha": "HBL",
+      "station_name": "Headbolt Lane",
+      "latitude": 53.4911,
+      "longitude": -2.8856
+    },
+    {
+      "3alpha": "IVA",
+      "station_name": "Inverness Airport",
+      "latitude": 57.5335,
+      "longitude": -4.0552
+    },
+    {
+      "3alpha": "MBT",
+      "station_name": "Marsh Barton",
+      "latitude": 50.704,
+      "longitude": -3.521
+    },
+    {
+      "3alpha": "PRI",
+      "station_name": "Portway Park & Ride",
+      "latitude": 51.4886,
+      "longitude": -2.6881
+    },
+    {
+      "3alpha": "RGP",
+      "station_name": "Reading Green Park",
+      "latitude": 51.4267,
+      "longitude": -1.0014
+    },
+    {
+      "3alpha": "THP",
+      "station_name": "Thanet Parkway",
+      "latitude": 51.330843,
+      "longitude": 1.361777
+    },
+    {
+      "3alpha": "CBX",
+      "station_name": "Cameron Bridge",
+      "latitude": 56.189693,
+      "longitude": -3.046855
+    },
+    {
+      "3alpha": "LEV",
+      "station_name": "Leven",
+      "latitude": 56.1923,
+      "longitude": -3.002
+    },
+    {
+      "3alpha": "ASD",
+      "station_name": "Ashley Down",
+      "latitude": 51.4788,
+      "longitude": -2.5767
+    },
+    {
+      "3alpha": "ASL",
+      "station_name": "Ashington",
+      "latitude": 55.1819,
+      "longitude": -1.5731
+    },
+    {
+      "3alpha": "SEJ",
+      "station_name": "Seaton Delaval",
+      "latitude": 55.0756,
+      "longitude": -1.5372
+    },
+    {
+      "3alpha": "NWH",
+      "station_name": "Newsham",
+      "latitude": 55.1028,
+      "longitude": -1.5239
+    },
+    {
+      "3alpha": "BLI",
+      "station_name": "Blyth Bebside",
+      "latitude": 55.1250,
+      "longitude": -1.5572
+    },
+    {
+      "3alpha": "BPA",
+      "station_name": "Beaulieu Park",
+      "latitude": 51.7574,
+      "longitude": 0.5187
     }
   ]
