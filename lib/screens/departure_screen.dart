@@ -5,7 +5,6 @@ import '../api/realtime_trains_service.dart';
 import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
-import '../models/service_detail.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart'; // <-- 1. IMPORT
