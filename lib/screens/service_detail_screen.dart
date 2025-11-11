@@ -2,11 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../api/realtime_trains_service.dart';
+import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
 import '../models/service_detail.dart';
 import '../widgets/countdown_timer.dart';
-import '../widgets/app_lifecycle_observer.dart'; // <-- 1. IMPORT
+import '../widgets/app_lifecycle_observer.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
   final Station station;
@@ -22,7 +23,6 @@ class ServiceDetailScreen extends StatefulWidget {
   State<ServiceDetailScreen> createState() => _ServiceDetailScreenState();
 }
 
-// --- 2. REMOVE WidgetsBindingObserver ---
 class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   final RealtimeTrainsService _apiService = RealtimeTrainsService();
   final GlobalKey<CountdownTimerState> _countdownKey = GlobalKey<CountdownTimerState>();
@@ -40,25 +40,25 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   void initState() {
     super.initState();
     _fetchServiceDetails();
-    _startAutoRefresh();
-    // --- 3. REMOVE observer ---
+    if (widget.departure.status != 'CANCELLED') {
+      _startAutoRefresh();
+    }
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
     _scrollController.dispose();
-    // --- 4. REMOVE observer ---
     super.dispose();
   }
 
-  // --- 5. ADD this method ---
   void _handleAppResumed() {
+    if (widget.departure.status == 'CANCELLED') {
+      return;
+    }
     _fetchServiceDetails(isRefresh: true);
     _startAutoRefresh();
   }
-
-  // --- 6. REMOVE didChangeAppLifecycleState ---
 
   void _startAutoRefresh() {
     _refreshTimer?.cancel();
@@ -179,20 +179,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       titleWidget = Text("Loading service...");
     }
 
-    // --- 7. WRAP THE SCAFFOLD ---
     return AppLifecycleObserver(
       onResumed: _handleAppResumed,
       child: Scaffold(
         appBar: AppBar(
           title: titleWidget,
           actions: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: CountdownTimer(
-                key: _countdownKey,
-                onRefresh: () => _fetchServiceDetails(isRefresh: true),
+            if (widget.departure.status != 'CANCELLED')
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: CountdownTimer(
+                  key: _countdownKey,
+                  onRefresh: () => _fetchServiceDetails(isRefresh: true),
+                ),
               ),
-            ),
           ],
         ),
         body: _buildBody(),
@@ -223,6 +223,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
   Widget _buildServiceDetailView(ServiceDetail service) {
     final theme = Theme.of(context);
+    final isCancelled = widget.departure.status == 'CANCELLED';
 
     String article = "A";
     if (service.atocName.isNotEmpty) {
@@ -252,6 +253,19 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   style: theme.textTheme.bodyLarge,
                   textAlign: TextAlign.center,
                 ),
+                if (isCancelled) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    "Service Cancelled",
+                    style: theme.textTheme.titleLarge?.copyWith(color: Colors.red, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    getFormattedCancellationReason(widget.departure.cancelReasonLongText ?? widget.departure.cancelReasonShortText),
+                    style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic),
+                    textAlign: TextAlign.center,
+                  ),
+                ]
               ],
             ),
           );
@@ -273,9 +287,10 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               isSelectedStation,
               isFinalDestination,
               isFirstStation,
+              isCancelled,
               key: isSelectedStation ? _selectedStationKey : null,
             ),
-            if (isTrainInTransitHere)
+            if (isTrainInTransitHere && !isCancelled)
               _buildInTransitView(service.locations[_trainPositionIndex]),
           ],
         );
@@ -334,13 +349,13 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     );
   }
 
-  Widget _buildTimelineStop(CallingPoint location, bool isSelectedStation, bool isFinalDestination, bool isFirstStation, {Key? key}) {
+  Widget _buildTimelineStop(CallingPoint location, bool isSelectedStation, bool isFinalDestination, bool isFirstStation, bool isCancelled, {Key? key}) {
     final theme = Theme.of(context);
     final isAtPlatform = location.serviceLocation == "AT_PLAT";
     final isApproaching = location.serviceLocation == "APPR_STAT" || location.serviceLocation == "APPR_PLAT";
 
     bool hasDeparted = false;
-    if (location.realtimeDeparture != null && _serviceDetail?.runDate != null) {
+    if (!isCancelled && location.realtimeDeparture != null && _serviceDetail?.runDate != null) {
       String time = _formatTime(location.realtimeDeparture);
       if (time != "--:--") {
         try {
@@ -354,14 +369,16 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       }
     }
 
-    final hasArrived = location.realtimeArrival?.isNotEmpty ?? false;
+    final hasArrived = !isCancelled && (location.realtimeArrival?.isNotEmpty ?? false);
 
-    Color circleColor = hasDeparted
+    Color circleColor = (hasDeparted || isCancelled)
         ? Colors.grey
         : theme.colorScheme.primary;
 
     IconData circleIcon;
-    if (isSelectedStation) {
+    if (isCancelled) {
+      circleIcon = Icons.cancel_outlined;
+    } else if (isSelectedStation) {
       circleIcon = Icons.location_pin;
     } else if (isAtPlatform) {
       circleIcon = Icons.train;
@@ -389,7 +406,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     thickness: 2,
                     color: isFirstStation
                         ? Colors.transparent
-                        : (hasDeparted || hasArrived)
+                        : (hasDeparted || hasArrived || isCancelled)
                         ? Colors.grey
                         : theme.colorScheme.primary.withOpacity(0.5),
                   ),
@@ -399,7 +416,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   Expanded(
                     child: VerticalDivider(
                       thickness: 2,
-                      color: hasDeparted ? Colors.grey : theme.colorScheme.primary.withOpacity(0.5),
+                      color: (hasDeparted || isCancelled) ? Colors.grey : theme.colorScheme.primary.withOpacity(0.5),
                     ),
                   )
                 else
@@ -419,19 +436,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     location.locationName ?? 'Unknown Station',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: isSelectedStation ? FontWeight.bold : FontWeight.normal,
+                      color: isCancelled ? Colors.grey : null,
                     ),
                   ),
                   const SizedBox(height: 4),
                   if (location.platform != null && location.platform!.isNotEmpty)
                     Text(
                         "Platform: ${location.platform}",
-                        style: theme.textTheme.bodySmall
+                        style: theme.textTheme.bodySmall?.copyWith(color: isCancelled ? Colors.grey : null)
                     ),
                   const SizedBox(height: 4),
-                  _buildStopTimes(location),
-                  if (isAtPlatform)
+                  _buildStopTimes(location, isCancelled),
+                  if (isAtPlatform && !isCancelled)
                     _buildStatusTag("AT PLATFORM", Colors.blue),
-                  if (isApproaching)
+                  if (isApproaching && !isCancelled)
                     _buildStatusTag("APPROACHING", Colors.orange),
                 ],
               ),
@@ -442,12 +460,36 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     );
   }
 
-  Widget _buildStopTimes(CallingPoint location) {
+  Widget _buildStopTimes(CallingPoint location, bool isCancelled) {
     final theme = Theme.of(context);
     final scheduledArrival = _formatTime(location.gbttBookedArrival);
     final realtimeArrival = _formatTime(location.realtimeArrival);
     final scheduledDeparture = _formatTime(location.gbttBookedDeparture);
     final realtimeDeparture = _formatTime(location.realtimeDeparture);
+
+    if (isCancelled) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (scheduledArrival != "--:--")
+            Text(
+              "$scheduledArrival (Arr)",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.grey,
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+          if (scheduledDeparture != "--:--")
+            Text(
+              "$scheduledDeparture (Dep)",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.grey,
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+        ],
+      );
+    }
 
     String arrivalText = scheduledArrival;
     String departureText = scheduledDeparture;
@@ -531,4 +573,3 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     );
   }
 }
-

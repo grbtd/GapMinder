@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../api/realtime_trains_service.dart';
+import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
 import '../models/service_detail.dart';
@@ -139,7 +140,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
   }
 
   void _onDepartureTapped(Departure departure) {
-    if (departure.serviceUid.isEmpty) {
+    if (departure.serviceUid.isEmpty && departure.status != 'CANCELLED') {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Cannot track this service."),
         backgroundColor: Colors.red,
@@ -334,11 +335,20 @@ class _DepartureScreenState extends State<DepartureScreen> {
     final textTheme = Theme.of(context).textTheme;
     final scheduledTime = _formatTime(departure.scheduledTime);
     final realtime = _formatTime(departure.realtimeTime);
+    final isCancelled = departure.status == 'CANCELLED';
 
     Widget timeWidget;
     Color timeColor = textTheme.bodyMedium?.color ?? Colors.white;
 
-    if (realtime != "--:--") {
+    if (isCancelled) {
+      timeWidget = Text(
+        scheduledTime,
+        style: textTheme.titleMedium?.copyWith(
+          decoration: TextDecoration.lineThrough,
+          color: Colors.red,
+        ),
+      );
+    } else if (realtime != "--:--") {
       if (realtime == scheduledTime) {
         timeColor = Colors.green; // On time
         timeWidget = Text(realtime, style: textTheme.titleMedium?.copyWith(color: timeColor));
@@ -372,7 +382,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
     }
 
     Widget platformWidget;
-    if (departure.serviceType?.trim().toUpperCase() == "BUS") {
+    if (isCancelled) {
+      platformWidget = const SizedBox.shrink();
+    } else if (departure.serviceType?.trim().toUpperCase() == "BUS") {
       platformWidget = const Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -391,15 +403,19 @@ class _DepartureScreenState extends State<DepartureScreen> {
           Text("Plat", style: textTheme.bodySmall),
           departure.platformChanged
               ? BlinkingWidget(
-            child: Text(
-              (departure.platform == null || departure.platform!.isEmpty) ? "TBC" : departure.platform!,
-              style: textTheme.titleLarge?.copyWith(color: Colors.orange, fontWeight: FontWeight.bold),
-            ),
-          )
+                  child: Text(
+                    (departure.platform == null || departure.platform!.isEmpty)
+                        ? "TBC"
+                        : departure.platform!,
+                    style: textTheme.titleLarge?.copyWith(color: Colors.orange, fontWeight: FontWeight.bold),
+                  ),
+                )
               : Text(
-            (departure.platform == null || departure.platform!.isEmpty) ? "TBC" : departure.platform!,
-            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-          ),
+                  (departure.platform == null || departure.platform!.isEmpty)
+                      ? "TBC"
+                      : departure.platform!,
+                  style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
         ],
       );
     }
@@ -425,15 +441,30 @@ class _DepartureScreenState extends State<DepartureScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      departure.operatorName ?? 'Unknown Operator',
-                      style: textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (!isGrouped && departure.status != null && departure.status!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      _buildStatusTag(departure.status!),
-                    ],
+                    if (isCancelled) ...[
+                      if (departure.cancelReasonShortText != null &&
+                          departure.cancelReasonShortText!.isNotEmpty)
+                        Text(
+                          getFormattedCancellationReason(departure.cancelReasonShortText!),
+                          style: textTheme.bodySmall?.copyWith(color: Colors.red, fontStyle: FontStyle.italic),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
+                      if (!isGrouped) ...[
+                        const SizedBox(height: 4),
+                        _buildStatusTag(departure.status!),
+                      ]
+                    ] else ...[
+                      Text(
+                        departure.operatorName ?? 'Unknown Operator',
+                        style: textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (!isGrouped && departure.status != null && departure.status!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _buildStatusTag(departure.status!),
+                      ],
+                    ]
                   ],
                 ),
               ),
@@ -452,12 +483,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
     switch (status) {
       case "LATE":
-        tagColor = Colors.red;
-        break;
       case "EARLY":
       case "ON TIME":
-        tagColor = Colors.green;
-        break;
+        return const SizedBox.shrink();
       case "CANCELLED":
         tagColor = Colors.red;
         break;
