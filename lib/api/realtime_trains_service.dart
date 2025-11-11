@@ -17,6 +17,7 @@ class RealtimeTrainsService {
     _isInitialized = true;
   }
 
+  // Populate assets/secrets.json with your RTT username and password.
   Future<Map<String, String>> _getAuthHeaders() async {
     await _initialize();
     return {
