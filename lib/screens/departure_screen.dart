@@ -183,7 +183,6 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // --- 3. WRAP THE SCAFFOLD ---
     return AppLifecycleObserver(
       onResumed: _handleAppResumed,
       child: Scaffold(
@@ -193,7 +192,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
             if (_departures != null && _departures!.isNotEmpty)
               IconButton(
                 icon: Icon(
-                  _isGroupingByPlatform ? Icons.access_time : Icons.view_module,
+                  _isGroupingByPlatform ? Icons.access_time : Icons.train,
                 ),
                 onPressed: () {
                   setState(() {
