@@ -5,6 +5,7 @@ import '../api/realtime_trains_service.dart';
 import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
+import '../models/service_detail.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart'; // <-- 1. IMPORT
@@ -167,15 +168,15 @@ class _DepartureScreenState extends State<DepartureScreen> {
     }
   }
 
-  String _formatStatusText(String status) {
+  String _formatStatusText(String status, {bool isGrouped = false}) {
     switch (status) {
       case "LATE": return "LATE";
       case "EARLY": return "EARLY";
       case "ON TIME": return "ON TIME";
       case "CANCELLED": return "CANCELLED";
-      case "AT_PLAT": return "AT PLATFORM";
-      case "APPR_STAT": return "APPROACHING";
-      case "APPR_PLAT": return "APPROACHING";
+      case "AT_PLAT": return isGrouped ? "AT PLAT" : "AT PLATFORM";
+      case "APPR_STAT":
+      case "APPR_PLAT": return isGrouped ? "APPR" : "APPROACHING";
       default:
         return status;
     }
@@ -392,7 +393,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
       );
     } else if (isGrouped) {
       platformWidget = (departure.status != null && departure.status!.isNotEmpty)
-          ? _buildStatusTag(departure.status!)
+          ? _buildStatusTag(departure.status!, isGrouped: isGrouped)
           : const SizedBox.shrink();
     } else {
       platformWidget = Column(
@@ -460,7 +461,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
                       ),
                       if (!isGrouped && departure.status != null && departure.status!.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        _buildStatusTag(departure.status!),
+                        _buildStatusTag(departure.status!, isGrouped: isGrouped),
                       ],
                     ]
                   ],
@@ -475,9 +476,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
     );
   }
 
-  Widget _buildStatusTag(String status) {
+  Widget _buildStatusTag(String status, {bool isGrouped = false}) {
     Color tagColor;
-    String statusText = _formatStatusText(status);
+    String statusText = _formatStatusText(status, isGrouped: isGrouped);
 
     switch (status) {
       case "LATE":
@@ -497,7 +498,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: tagColor.withOpacity(0.2),
+        color: tagColor.withAlpha(50),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: tagColor, width: 1),
       ),
@@ -508,6 +509,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
           fontWeight: FontWeight.bold,
           fontSize: 10,
         ),
+        textAlign: TextAlign.center, // Center the text
       ),
     );
   }
