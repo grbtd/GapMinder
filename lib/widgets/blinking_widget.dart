@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 // Custom widget to make its child blink
+// This is used in platform alterations to emulate IRL Station Boards
 class BlinkingWidget extends StatefulWidget {
   final Widget child;
   const BlinkingWidget({super.key, required this.child});

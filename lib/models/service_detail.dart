@@ -4,7 +4,7 @@ class ServiceDetail {
   final String trainIdentity;
   final String atocName;
   final String origin;
-  final String? originTime; // <-- ADDED
+  final String? originTime;
   final String destination;
   final List<CallingPoint> locations;
 
@@ -14,7 +14,7 @@ class ServiceDetail {
     required this.trainIdentity,
     required this.atocName,
     required this.origin,
-    required this.originTime, // <-- ADDED
+    required this.originTime,
     required this.destination,
     required this.locations,
   });
@@ -36,9 +36,7 @@ class ServiceDetail {
       trainIdentity: _asString(json['trainIdentity']) ?? '',
       atocName: _asString(json['atocName']) ?? 'Unknown Operator',
       origin: json['origin']?[0]?['description'] ?? 'Unknown Origin',
-      // --- ADDED ---
       originTime: locations.isNotEmpty ? locations.first.gbttBookedDeparture : null,
-      // --- END ADDED ---
       destination: json['destination']?[0]?['description'] ?? 'Unknown Destination',
       locations: locations,
     );
@@ -68,7 +66,7 @@ class CallingPoint {
     required this.departureLateness,
   });
 
-  // Helper function to safely convert JSON values to String?
+  // Some returns will be empty, we need to safely null them
   static String? _asString(dynamic value) {
     if (value == null) return null;
     return value.toString();
