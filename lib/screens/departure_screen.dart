@@ -5,10 +5,9 @@ import '../api/realtime_trains_service.dart';
 import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
-import '../models/service_detail.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
-import '../widgets/app_lifecycle_observer.dart'; // <-- 1. IMPORT
+import '../widgets/app_lifecycle_observer.dart';
 import 'service_detail_screen.dart';
 
 class DepartureScreen extends StatefulWidget {
@@ -44,9 +43,8 @@ class _DepartureScreenState extends State<DepartureScreen> {
     super.dispose();
   }
 
-  // --- 2. ADD THIS METHOD ---
   void _handleAppResumed() {
-    // App came to foreground, force a refresh and restart timer
+    // If the app is resumed, refresh the departures
     _loadDepartures(isRefresh: true);
     _startAutoRefresh();
   }
@@ -82,18 +80,16 @@ class _DepartureScreenState extends State<DepartureScreen> {
         _departures = departures;
         _groupDepartures();
         _isLoading = false;
-        _error = null; // Clear any previous errors
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
-      // --- ADDED: Silent refresh logic ---
       if (!isRefresh || _departures == null) {
         setState(() {
           _error = "Failed to load departures: ${e.toString()}";
           _isLoading = false;
         });
       }
-      // --- END ADDED ---
     }
     _countdownKey.currentState?.reset();
   }
@@ -491,7 +487,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "AT_PLAT":
         tagColor = Colors.blue;
         break;
-      default: // APPR_STAT, APPR_PLAT, etc.
+      default: // APPR_STAT, APPR_PLAT, etc. TODO: Maybe we can colour code these a little nicer?
         tagColor = Colors.orange;
     }
 
@@ -509,7 +505,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
           fontWeight: FontWeight.bold,
           fontSize: 10,
         ),
-        textAlign: TextAlign.center, // Center the text
+        textAlign: TextAlign.center,
       ),
     );
   }
