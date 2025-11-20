@@ -377,7 +377,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
     IconData circleIcon;
     if (isCancelled) {
-      circleIcon = Icons.cancel_outlined;
+      circleIcon = Icons.cancel;
     } else if (isSelectedStation) {
       circleIcon = Icons.location_pin;
     } else if (isAtPlatform) {
@@ -387,7 +387,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     } else if (isFinalDestination) {
       circleIcon = Icons.flag;
     } else {
-      circleIcon = Icons.circle_outlined;
+      circleIcon = Icons.circle;
     }
 
     return IntrinsicHeight(
