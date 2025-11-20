@@ -351,7 +351,16 @@ class _DepartureScreenState extends State<DepartureScreen> {
         try {
           final sched = DateFormat.Hm().parse(scheduledTime);
           final real = DateFormat.Hm().parse(realtime);
-          timeColor = real.isAfter(sched) ? Colors.red : Colors.green;
+          
+          int diffMinutes = real.difference(sched).inMinutes;
+          // Handle day wrap (e.g. 23:55 sched, 00:05 real)
+          if (diffMinutes < -720) {
+            diffMinutes += 1440;
+          } else if (diffMinutes > 720) {
+            diffMinutes -= 1440;
+          }
+          
+          timeColor = diffMinutes > 0 ? Colors.red : Colors.green;
         } catch (e) {
           timeColor = Colors.red;
         }
