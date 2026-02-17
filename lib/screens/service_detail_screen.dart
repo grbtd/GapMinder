@@ -35,6 +35,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   bool _isLoading = true;
   Timer? _refreshTimer;
   int _trainPositionIndex = -1;
+  List<DateTime?> _locationTimestamps = [];
 
   @override
   void initState() {
@@ -89,12 +90,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       );
       if (!mounted) return;
 
-      setState(() {
-        _serviceDetail = serviceDetail;
-        _trainPositionIndex = _findTrainPositionIndex(serviceDetail);
-        _isLoading = false;
-        _error = null;
-      });
+      _processServiceData(serviceDetail);
 
       if (!isRefresh) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -121,6 +117,56 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     _countdownKey.currentState?.reset();
   }
 
+  void _processServiceData(ServiceDetail service) {
+    List<DateTime?> timestamps = [];
+    if (service.runDate != null) {
+      try {
+        DateTime currentDate = DateFormat("yyyy-MM-dd").parse(service.runDate!);
+        int lastHour = -1;
+
+        for (var loc in service.locations) {
+          // Use the most relevant time available to establish the chronological timeline
+          String? orderingTimeStr = loc.realtimeDeparture ?? loc.gbttBookedDeparture ?? loc.realtimeArrival ?? loc.gbttBookedArrival;
+          
+          DateTime? stopTime;
+          if (orderingTimeStr != null && orderingTimeStr.length == 4) {
+             try {
+               int h = int.parse(orderingTimeStr.substring(0, 2));
+               int m = int.parse(orderingTimeStr.substring(2, 4));
+               
+               // Detect day wrapping: if hour jumps backward significantly (e.g. 23 -> 00)
+               if (lastHour != -1) {
+                  if (h < lastHour && (lastHour - h) > 12) {
+                     currentDate = currentDate.add(const Duration(days: 1));
+                  }
+               }
+               lastHour = h;
+               stopTime = DateTime(currentDate.year, currentDate.month, currentDate.day, h, m);
+             } catch (_) {
+               // parse error
+             }
+          }
+          timestamps.add(stopTime);
+        }
+      } catch (e) {
+        // fallback
+      }
+    }
+    
+    // Ensure list size matches locations
+    while (timestamps.length < service.locations.length) {
+      timestamps.add(null);
+    }
+
+    setState(() {
+      _serviceDetail = service;
+      _locationTimestamps = timestamps;
+      _trainPositionIndex = _findTrainPositionIndex(service);
+      _isLoading = false;
+      _error = null;
+    });
+  }
+
   String _formatTime(String? time) {
     if (time == null || time.length != 4) return "--:--";
     try {
@@ -141,23 +187,15 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     int lastDepartedIndex = -1;
     final now = DateTime.now();
 
-    final runDate = service.runDate;
-    if (runDate == null) return -1;
-
-    for (int i = 0; i < service.locations.length; i++) {
-      final location = service.locations[i];
-      String time = _formatTime(location.realtimeDeparture);
-      if (time != "--:--") {
-        try {
-          final departureTime = DateFormat("yyyy-MM-dd HH:mm").parse("$runDate $time");
-
-          if (departureTime.isBefore(now)) {
-            lastDepartedIndex = i;
-          } else {
-            break;
-          }
-        } catch (e) {
-          // Ignore parsing errors
+    for (int i = 0; i < _locationTimestamps.length; i++) {
+      final ts = _locationTimestamps[i];
+      if (ts != null) {
+        // If the calculated timestamp (which accounts for day wrap) is in the past
+        if (ts.isBefore(now)) {
+          lastDepartedIndex = i;
+        } else {
+          // Assuming sorted list, once we hit a future time, we stop
+          break;
         }
       }
     }
@@ -284,6 +322,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           children: [
             _buildTimelineStop(
               location,
+              locationIndex,
               isSelectedStation,
               isFinalDestination,
               isFirstStation,
@@ -315,18 +354,15 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     return IntrinsicHeight(
       child: Row(
         children: [
-          Container(
+          SizedBox(
             width: 80,
-            alignment: Alignment.center,
-            child: SizedBox(
-              height: 40,
-              child: VerticalDivider(
-                thickness: 2,
+            child: Center(
+              child: Container(
+                width: 2,
                 color: theme.colorScheme.primary.withOpacity(0.5),
               ),
             ),
           ),
-          const SizedBox(width: 16),
           Expanded(
             child: Row(
               children: [
@@ -349,22 +385,17 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     );
   }
 
-  Widget _buildTimelineStop(CallingPoint location, bool isSelectedStation, bool isFinalDestination, bool isFirstStation, bool isCancelled, {Key? key}) {
+  Widget _buildTimelineStop(CallingPoint location, int index, bool isSelectedStation, bool isFinalDestination, bool isFirstStation, bool isCancelled, {Key? key}) {
     final theme = Theme.of(context);
     final isAtPlatform = location.serviceLocation == "AT_PLAT";
     final isApproaching = location.serviceLocation == "APPR_STAT" || location.serviceLocation == "APPR_PLAT";
 
     bool hasDeparted = false;
-    if (!isCancelled && location.realtimeDeparture != null && _serviceDetail?.runDate != null) {
-      String time = _formatTime(location.realtimeDeparture);
-      if (time != "--:--") {
-        try {
-          final departureTime = DateFormat("yyyy-MM-dd HH:mm").parse("${_serviceDetail!.runDate!} $time");
-          if (departureTime.isBefore(DateTime.now())) {
-            hasDeparted = true;
-          }
-        } catch (e) {
-          // Ignore parsing errors
+    if (!isCancelled) {
+      if (index < _locationTimestamps.length) {
+        final ts = _locationTimestamps[index];
+        if (ts != null && ts.isBefore(DateTime.now())) {
+           hasDeparted = true;
         }
       }
     }
@@ -389,39 +420,41 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     } else {
       circleIcon = Icons.circle;
     }
+    
+    Color topSegmentColor = (isFirstStation)
+        ? Colors.transparent
+        : ((hasDeparted || hasArrived || isCancelled)
+            ? Colors.grey
+            : theme.colorScheme.primary.withOpacity(0.5));
+
+    Color bottomSegmentColor = (isFinalDestination)
+        ? Colors.transparent
+        : ((hasDeparted || isCancelled)
+            ? Colors.grey
+            : theme.colorScheme.primary.withOpacity(0.5));
 
     return IntrinsicHeight(
       key: key,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Timeline and Time
+          // Timeline CustomPaint
           SizedBox(
             width: 80,
-            child: Column(
-              children: [
-                Container(
-                  height: 20,
-                  alignment: Alignment.center,
-                  child: VerticalDivider(
-                    thickness: 2,
-                    color: isFirstStation
-                        ? Colors.transparent
-                        : (hasDeparted || hasArrived || isCancelled)
-                        ? Colors.grey
-                        : theme.colorScheme.primary.withOpacity(0.5),
-                  ),
-                ),
-                Icon(circleIcon, color: circleColor, size: 24),
-                if (!isFinalDestination)
-                  Expanded(
-                    child: VerticalDivider(
-                      thickness: 2,
-                      color: (hasDeparted || isCancelled) ? Colors.grey : theme.colorScheme.primary.withOpacity(0.5),
-                    ),
-                  )
-                else
-                  const Expanded(child: SizedBox.shrink()),
-              ],
+            child: CustomPaint(
+               painter: _TimelinePainter(
+                 topColor: topSegmentColor,
+                 bottomColor: bottomSegmentColor,
+                 iconTop: 20.0,
+                 iconSize: 24.0,
+               ),
+               child: Align(
+                 alignment: Alignment.topCenter,
+                 child: Padding(
+                   padding: const EdgeInsets.only(top: 20.0),
+                   child: Icon(circleIcon, color: circleColor, size: 24),
+                 ),
+               ),
             ),
           ),
 
@@ -496,11 +529,25 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     Color arrivalColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
     Color departureColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
 
+    Color getColor(String sched, String real) {
+      if (real == sched) return Colors.green;
+      try {
+        final s = DateFormat.Hm().parse(sched);
+        final r = DateFormat.Hm().parse(real);
+        int diff = r.difference(s).inMinutes;
+        if (diff < -720) diff += 1440;
+        else if (diff > 720) diff -= 1440;
+        return diff > 0 ? Colors.red : Colors.green;
+      } catch (e) {
+        return Colors.red;
+      }
+    }
+
     if (realtimeArrival != "--:--") {
-      arrivalColor = (realtimeArrival == scheduledArrival) ? Colors.green : Colors.red;
+      arrivalColor = getColor(scheduledArrival, realtimeArrival);
     }
     if (realtimeDeparture != "--:--") {
-      departureColor = (realtimeDeparture == scheduledDeparture) ? Colors.green : Colors.red;
+      departureColor = getColor(scheduledDeparture, realtimeDeparture);
     }
 
     return Column(
@@ -571,5 +618,56 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         ),
       ),
     );
+  }
+}
+
+class _TimelinePainter extends CustomPainter {
+  final Color topColor;
+  final Color bottomColor;
+  final double iconTop;
+  final double iconSize;
+
+  _TimelinePainter({
+    required this.topColor,
+    required this.bottomColor,
+    required this.iconTop,
+    required this.iconSize,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    final centerX = size.width / 2;
+
+    // Draw top line (from 0 to top of icon)
+    if (topColor != Colors.transparent) {
+      paint.color = topColor;
+      canvas.drawLine(
+        Offset(centerX, 0),
+        Offset(centerX, iconTop),
+        paint,
+      );
+    }
+
+    // Draw bottom line (from bottom of icon to end)
+    if (bottomColor != Colors.transparent) {
+      paint.color = bottomColor;
+      canvas.drawLine(
+        Offset(centerX, iconTop + iconSize),
+        Offset(centerX, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TimelinePainter oldDelegate) {
+    return oldDelegate.topColor != topColor ||
+        oldDelegate.bottomColor != bottomColor ||
+        oldDelegate.iconTop != iconTop ||
+        oldDelegate.iconSize != iconSize;
   }
 }
