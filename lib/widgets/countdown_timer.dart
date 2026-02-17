@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 class CountdownTimer extends StatefulWidget {
   final VoidCallback onRefresh;
-  final Key? key; // Allow passing a key
+  final Key? key;
 
   const CountdownTimer({this.key, required this.onRefresh}) : super(key: key);
 
@@ -70,7 +70,6 @@ class CountdownTimerState extends State<CountdownTimer> {
         child: CircularProgressIndicator(
           value: _progress,
           strokeWidth: 2.5,
-          // **CHANGE**: Use the theme's primary color
           color: Theme.of(context).colorScheme.primary,
         ),
       ),

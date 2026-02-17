@@ -1,4 +1,4 @@
-// Represents the API credentials loaded from secrets.json
+// Contains the API credentials loaded from secrets.json
 class Secrets {
   final String username;
   final String password;

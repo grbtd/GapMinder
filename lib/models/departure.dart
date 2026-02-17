@@ -9,8 +9,8 @@ class Departure {
   final bool platformChanged;
   final String? status; // Nullable
   final String? serviceType; // Nullable
-  final String? cancelReasonShortText;
-  final String? cancelReasonLongText;
+  final String? cancelReasonShortText; // Nullable
+  final String? cancelReasonLongText; // Nullable
 
   Departure({
     required this.serviceUid,
