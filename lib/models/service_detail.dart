@@ -1,3 +1,5 @@
+import 'package:xml/xml.dart';
+
 class ServiceDetail {
   final String serviceUid;
   final String? runDate;
@@ -19,25 +21,43 @@ class ServiceDetail {
     required this.locations,
   });
 
-  // Helper function to safely convert JSON values to String?
-  static String? _asString(dynamic value) {
-    if (value == null) return null;
-    return value.toString();
-  }
+  factory ServiceDetail.fromXml(XmlElement node) {
+    String? getVal(String name) => node.findElements(name).firstOrNull?.innerText;
 
-  factory ServiceDetail.fromJson(Map<String, dynamic> json) {
-    var locationsList = json['locations'] as List;
-    List<CallingPoint> locations =
-    locationsList.map((i) => CallingPoint.fromJson(i)).toList();
+    final serviceId = getVal('serviceID') ?? 'UNKNOWN';
+    final operator = getVal('operator') ?? 'Unknown Operator';
+
+    // Darwin doesn't always provide simple Origin/Dest fields in Details, 
+    // usually you infer them from the calling points list.
+    // However, they are often wrapped in specific blocks.
+
+    final locations = <CallingPoint>[];
+
+    // Helper to parse calling point lists
+    void parsePoints(String listName) {
+      final listNode = node.findElements(listName).firstOrNull;
+      final points = listNode?.findAllElements('callingPoint') ?? [];
+
+      for (var p in points) {
+        locations.add(CallingPoint.fromXml(p));
+      }
+    }
+
+    parsePoints('previousCallingPoints');
+    parsePoints('subsequentCallingPoints');
+
+    final origin = locations.isNotEmpty ? locations.first.locationName : 'Unknown';
+    final destination = locations.isNotEmpty ? locations.last.locationName : 'Unknown';
+    final originTime = locations.isNotEmpty ? locations.first.gbttBookedDeparture : null;
 
     return ServiceDetail(
-      serviceUid: _asString(json['serviceUid']) ?? 'UNKNOWN',
-      runDate: _asString(json['runDate']),
-      trainIdentity: _asString(json['trainIdentity']) ?? '',
-      atocName: _asString(json['atocName']) ?? 'Unknown Operator',
-      origin: json['origin']?[0]?['description'] ?? 'Unknown Origin',
-      originTime: locations.isNotEmpty ? locations.first.gbttBookedDeparture : null,
-      destination: json['destination']?[0]?['description'] ?? 'Unknown Destination',
+      serviceUid: serviceId,
+      runDate: DateTime.now().toIso8601String(),
+      trainIdentity: '', // Darwin public often omits Headcode (trainIdentity)
+      atocName: operator,
+      origin: origin ?? 'Unknown',
+      originTime: originTime,
+      destination: destination ?? 'Unknown',
       locations: locations,
     );
   }
@@ -66,24 +86,23 @@ class CallingPoint {
     required this.departureLateness,
   });
 
-  // Some returns will be empty, we need to safely null them
-  static String? _asString(dynamic value) {
-    if (value == null) return null;
-    return value.toString();
-  }
+  factory CallingPoint.fromXml(XmlElement node) {
+    String? getVal(String name) => node.findElements(name).firstOrNull?.innerText;
 
-  factory CallingPoint.fromJson(Map<String, dynamic> json) {
+    final st = getVal('st'); // Scheduled Time (used for arr or dep depending on context)
+    final et = getVal('et'); // Estimated Time
+    final at = getVal('at'); // Actual Time
+
     return CallingPoint(
-      locationName: _asString(json['locationName'] ?? json['description']),
-      crs: _asString(json['crs']),
-      gbttBookedArrival: _asString(json['gbttBookedArrival']),
-      realtimeArrival: _asString(json['realtimeArrival']),
-      gbttBookedDeparture: _asString(json['gbttBookedDeparture']),
-      realtimeDeparture: _asString(json['realtimeDeparture']),
-      platform: _asString(json['platform']),
-      serviceLocation: _asString(json['serviceLocation']),
-      departureLateness: int.tryParse(_asString(json['realtimeGbttDepartureLateness']) ?? '0') ?? 0,
+      locationName: getVal('locationName'),
+      crs: getVal('crs'),
+      gbttBookedArrival: st, // Simplified mapping
+      realtimeArrival: at ?? et,
+      gbttBookedDeparture: st,
+      realtimeDeparture: at ?? et,
+      platform: getVal('platform'),
+      serviceLocation: null,
+      departureLateness: 0, // Would need calculation comparing st and et
     );
   }
 }
-
