@@ -113,15 +113,28 @@ class _StationListScreenState extends State<StationListScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        return Future.error('Location permissions are denied');
+        return Future.error('Location permissions are denied.');
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
       return Future.error(
-          'Location permissions are permanently denied, we cannot request permissions.');
+          'Location permissions are permanently denied; cannot request permissions.');
     }
-    return await Geolocator.getCurrentPosition();
+
+    // Try last known position first for quick responsiveness
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        return lastKnown;
+      }
+    } catch (_) {
+      // If last known position fails, continue to get current position
+    }
+
+    return await Geolocator.getCurrentPosition(
+      timeLimit: const Duration(seconds: 10),
+    );
   }
 
   void _filterStations(String query) {

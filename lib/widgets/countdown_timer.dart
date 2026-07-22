@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 
 class CountdownTimer extends StatefulWidget {
   final VoidCallback onRefresh;
-  final Key? key;
 
-  const CountdownTimer({this.key, required this.onRefresh}) : super(key: key);
+  const CountdownTimer({super.key, required this.onRefresh});
 
   @override
   CountdownTimerState createState() => CountdownTimerState();

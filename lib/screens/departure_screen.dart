@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../api/realtime_trains_service.dart';
+import '../helpers/preferences_service.dart';
 import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
@@ -21,6 +22,7 @@ class DepartureScreen extends StatefulWidget {
 
 class _DepartureScreenState extends State<DepartureScreen> {
   final RealtimeTrainsService _apiService = RealtimeTrainsService();
+  final PreferencesService _prefs = PreferencesService();
   final GlobalKey<CountdownTimerState> _countdownKey = GlobalKey<CountdownTimerState>();
 
   List<Departure>? _departures;
@@ -33,14 +35,21 @@ class _DepartureScreenState extends State<DepartureScreen> {
   @override
   void initState() {
     super.initState();
+    _prefs.addListener(_onPrefsChanged);
     _loadDepartures();
     _startAutoRefresh();
   }
 
   @override
   void dispose() {
+    _prefs.removeListener(_onPrefsChanged);
     _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _onPrefsChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _handleAppResumed() {
@@ -73,12 +82,18 @@ class _DepartureScreenState extends State<DepartureScreen> {
     }
 
     try {
-      final departures = await _apiService.fetchDepartures(widget.station.crsCode);
+      final departures = await _apiService.fetchDepartures(widget.station.crsCode, forceRefresh: isRefresh);
       if (!mounted) return;
+
+      Map<String, List<Departure>> grouped = {};
+      for (var dep in departures) {
+        final platformKey = (dep.platform?.isNotEmpty ?? false) ? "Platform ${dep.platform}" : "Platform TBC";
+        grouped.putIfAbsent(platformKey, () => []).add(dep);
+      }
 
       setState(() {
         _departures = departures;
-        _groupDepartures();
+        _groupedDepartures = grouped;
         _isLoading = false;
         _error = null;
       });
@@ -92,47 +107,6 @@ class _DepartureScreenState extends State<DepartureScreen> {
       }
     }
     _countdownKey.currentState?.reset();
-  }
-
-  void _groupDepartures() {
-    if (_departures == null) return;
-
-    final platformPattern = RegExp(r'(\d+)');
-    List<String> platforms = _departures!
-        .map((d) => d.serviceType?.trim().toUpperCase() == 'BUS' ? 'BUS' : (d.platform ?? 'TBC'))
-        .where((p) => p.isNotEmpty)
-        .toSet()
-        .toList();
-
-    platforms.sort((a, b) {
-      if (a == b) return 0;
-      if (a == 'BUS') return 1;
-      if (b == 'BUS') return -1;
-      if (a == 'TBC') return 1;
-      if (b == 'TBC') return -1;
-
-      final matchA = platformPattern.firstMatch(a);
-      final matchB = platformPattern.firstMatch(b);
-
-      final numA = matchA != null ? int.tryParse(matchA.group(1)!) ?? 0 : a;
-      final numB = matchB != null ? int.tryParse(matchB.group(1)!) ?? 0 : b;
-
-      if (numA is int && numB is int) {
-        return numA.compareTo(numB);
-      }
-      return a.compareTo(b);
-    });
-
-    Map<String, List<Departure>> grouped = {};
-    for (var platform in platforms) {
-      grouped[platform] = _departures!
-          .where((d) =>
-              (d.serviceType?.trim().toUpperCase() == 'BUS' ? 'BUS' : (d.platform ?? 'TBC')) ==
-              platform)
-          .toList();
-    }
-
-    _groupedDepartures = grouped;
   }
 
   void _onDepartureTapped(Departure departure) {
