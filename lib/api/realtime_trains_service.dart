@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'secrets_loader.dart';
 import '../models/departure.dart';
@@ -61,7 +60,6 @@ class RealtimeTrainsService {
   Future<String> _getValidAccessToken({bool forceRefresh = false}) async {
     await _initialize();
     if (_userToken == null || _userToken!.isEmpty) {
-      debugPrint('[RTT API] Error: Bearer token is empty in secrets.json.');
       throw Exception('RTT Bearer token is missing. Please set "token" in assets/secrets.json.');
     }
 
@@ -74,12 +72,10 @@ class RealtimeTrainsService {
 
     try {
       final url = Uri.parse('https://data.rtt.io/api/get_access_token');
-      debugPrint('[RTT API] Exchanging refresh token at: $url');
       final response = await _client.get(
         url,
         headers: {'Authorization': 'Bearer $_userToken'},
       );
-      debugPrint('[RTT API] Token exchange status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -108,15 +104,10 @@ class RealtimeTrainsService {
             _tokenExpiry = DateTime.now().add(const Duration(hours: 1));
           }
 
-          debugPrint('[RTT API] Access token cached successfully until $_tokenExpiry.');
           return accessToken;
         }
-      } else {
-        debugPrint('[RTT API] Token exchange failed with status ${response.statusCode}: ${response.body}');
       }
-    } catch (e) {
-      debugPrint('[RTT API] Exception during token exchange: $e');
-    }
+    } catch (_) {}
 
     if (_cachedAccessToken != null) {
       return _cachedAccessToken!;
@@ -138,7 +129,6 @@ class RealtimeTrainsService {
     try {
       return await action(headers);
     } on _UnauthorizedException {
-      debugPrint('[RTT API] Received 401 Unauthorized. Attempting token refresh...');
       headers = await _getAuthHeaders(forceRefresh: true);
       return await action(headers);
     }
@@ -202,9 +192,7 @@ class RealtimeTrainsService {
     final url = Uri.parse('https://data.rtt.io/rtt/location?code=gb-nr:$cleanCrs');
 
     List<Departure> departures = await _executeWithRetry((headers) async {
-      debugPrint('[RTT API] Fetching departures from: $url');
       final response = await _client.get(url, headers: headers);
-      debugPrint('[RTT API] Response status for $url: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -269,8 +257,7 @@ class RealtimeTrainsService {
             realtimeTime: stop?.realtimeDeparture ?? stop?.realtimeArrival ?? dep.realtimeTime,
             status: stop?.serviceLocation ?? dep.status,
           );
-        } catch (e) {
-          debugPrint('[RTT API] Pre-fetch details exception for service ${dep.serviceUid}: $e');
+        } catch (_) {
           return dep;
         }
       }));
@@ -296,7 +283,6 @@ class RealtimeTrainsService {
     if (!forceRefresh && _serviceCache.containsKey(cacheKey)) {
       final cacheTime = _serviceCacheTime[cacheKey];
       if (cacheTime != null && cacheTime.isAfter(DateTime.now().subtract(const Duration(minutes: 5)))) {
-        debugPrint('[RTT API] Returning cached ServiceDetail for $cacheKey.');
         return _serviceCache[cacheKey]!;
       }
     }
@@ -316,10 +302,8 @@ class RealtimeTrainsService {
       http.Response? lastResponse;
 
       for (final url in candidateUrls) {
-        debugPrint('[RTT API] Fetching service details from: $url');
         try {
           final response = await _client.get(url, headers: headers);
-          debugPrint('[RTT API] Response status for $url: ${response.statusCode}');
 
           lastResponse = response;
           if (response.statusCode == 200) {
@@ -338,7 +322,6 @@ class RealtimeTrainsService {
           }
         } catch (e) {
           if (e is _UnauthorizedException) rethrow;
-          debugPrint('[RTT API] Request failed for $url: $e');
         }
       }
 
