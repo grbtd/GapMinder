@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../helpers/json_parsers.dart';
 
 class ServiceDetail {
@@ -24,16 +25,28 @@ class ServiceDetail {
   });
 
   factory ServiceDetail.fromJson(Map<String, dynamic> rawJson) {
-    final json = (rawJson['service'] as Map<String, dynamic>?) ?? rawJson;
+    final serviceObj = (rawJson['service'] as Map<String, dynamic>?) ?? {};
+    final json = serviceObj.isNotEmpty ? serviceObj : rawJson;
 
-    final schedule = (json['scheduleMetadata'] as Map<String, dynamic>?) ?? {};
-    final metadata = (json['metadata'] as Map<String, dynamic>?) ?? {};
+    final schedule = (json['scheduleMetadata'] as Map<String, dynamic>?) ??
+        (rawJson['scheduleMetadata'] as Map<String, dynamic>?) ??
+        {};
+    final metadata = (json['metadata'] as Map<String, dynamic>?) ??
+        (rawJson['metadata'] as Map<String, dynamic>?) ??
+        {};
+    final serviceMetadata = (json['serviceMetadata'] as Map<String, dynamic>?) ??
+        (rawJson['serviceMetadata'] as Map<String, dynamic>?) ??
+        {};
     final operator = schedule['operator'] ?? json['operator'] ?? metadata['operator'];
 
-    final originsData = json['origin'] ?? json['origins'] ?? metadata['origin'] ?? schedule['origin'];
-    final destinationsData = json['destination'] ?? json['destinations'] ?? metadata['destination'] ?? schedule['destination'];
+    final originsData = json['origin'] ?? json['origins'] ?? metadata['origin'] ?? schedule['origin'] ?? rawJson['origin'];
+    final destinationsData = json['destination'] ?? json['destinations'] ?? metadata['destination'] ?? schedule['destination'] ?? rawJson['destination'];
 
-    var locationsList = json['locations'] as List? ?? json['callingPoints'] as List? ?? json['stops'] as List? ?? [];
+    var locationsList = json['locations'] as List? ??
+        json['callingPoints'] as List? ??
+        json['stops'] as List? ??
+        rawJson['locations'] as List? ??
+        [];
     List<CallingPoint> locations =
         locationsList.map((i) => CallingPoint.fromJson(i as Map<String, dynamic>)).toList();
 
@@ -49,20 +62,56 @@ class ServiceDetail {
 
     final serviceUidStr = parseServiceUid(json, schedule, metadata);
 
-    final headcode = asString(
-      schedule['trainReportingIdentity'] ??
-      json['trainReportingIdentity'] ??
-      metadata['trainReportingIdentity'] ??
-      json['headcode']
-    );
+    debugPrint('[ServiceDetail.fromJson] Parsing ServiceDetail JSON...');
+    debugPrint('[ServiceDetail.fromJson] rawJson top-level keys: ${rawJson.keys.toList()}');
+    if (serviceObj.isNotEmpty) {
+      debugPrint('[ServiceDetail.fromJson] serviceObj keys: ${serviceObj.keys.toList()}');
+    }
+    debugPrint('[ServiceDetail.fromJson] parsed serviceUidStr: "$serviceUidStr"');
 
-    final trainIdentityStr = headcode ??
-        asString(
-          schedule['identity'] ??
-          json['trainIdentity'] ??
-          json['identity']
-        ) ??
-        '';
+    final headcodeCandidates = [
+      rawJson['trainReportingIdentity'],
+      serviceObj['trainReportingIdentity'],
+      json['trainReportingIdentity'],
+      schedule['trainReportingIdentity'],
+      metadata['trainReportingIdentity'],
+      serviceMetadata['trainReportingIdentity'],
+      rawJson['headcode'],
+      serviceObj['headcode'],
+      json['headcode'],
+      schedule['headcode'],
+      metadata['headcode'],
+      serviceMetadata['headcode'],
+      rawJson['identity'],
+      serviceObj['identity'],
+      json['identity'],
+      schedule['identity'],
+      metadata['identity'],
+      serviceMetadata['identity'],
+      rawJson['trainIdentity'],
+      serviceObj['trainIdentity'],
+      json['trainIdentity'],
+    ];
+
+    String trainIdentityStr = '';
+    for (int i = 0; i < headcodeCandidates.length; i++) {
+      final candidate = headcodeCandidates[i];
+      final str = asString(candidate);
+      if (str != null && str.isNotEmpty) {
+        debugPrint('[ServiceDetail.fromJson] Candidate [$i] value: "$str"');
+        if (!str.startsWith('gb-nr:') && !str.contains(':') && str != serviceUidStr) {
+          trainIdentityStr = str;
+          debugPrint('[ServiceDetail.fromJson] -> ACCEPTED Candidate [$i] as trainIdentity (Head Code): "$trainIdentityStr"');
+          break;
+        } else {
+          debugPrint('[ServiceDetail.fromJson] -> REJECTED Candidate [$i] ("$str") because it looks like a Service UID');
+        }
+      }
+    }
+
+    if (trainIdentityStr.isEmpty) {
+      debugPrint('[ServiceDetail.fromJson] No valid Head Code (trainReportingIdentity) found.');
+    }
 
     int? coachCountVal = parseCoachCount(
       json['length'] ?? json['coaches'] ?? json['formation'] ?? json['trainLength'],

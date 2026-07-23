@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'secrets_loader.dart';
 import '../models/departure.dart';
@@ -303,10 +305,13 @@ class RealtimeTrainsService {
 
       for (final url in candidateUrls) {
         try {
+          debugPrint('[RealtimeTrainsService] Fetching service detail from: $url');
           final response = await _client.get(url, headers: headers);
+          debugPrint('[RealtimeTrainsService] HTTP ${response.statusCode} from $url');
 
           lastResponse = response;
           if (response.statusCode == 200) {
+            debugPrint('[RealtimeTrainsService] Raw Response Body: ${response.body}');
             final data = json.decode(response.body);
             final detail = ServiceDetail.fromJson(data);
             _serviceCache[cacheKey] = detail;

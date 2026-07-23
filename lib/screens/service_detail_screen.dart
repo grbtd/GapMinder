@@ -32,6 +32,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _selectedStationKey = GlobalKey();
   final GlobalKey _trainPositionKey = GlobalKey();
+  final GlobalKey _inTransitKey = GlobalKey();
 
   ServiceDetail? _serviceDetail;
   String? _error;
@@ -106,7 +107,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
       if (!isRefresh) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          final targetContext = _trainPositionKey.currentContext ?? _selectedStationKey.currentContext;
+          final hasInTransitCtx = _inTransitKey.currentContext != null;
+          final hasTrainPosCtx = _trainPositionKey.currentContext != null;
+          final hasSelectedStationCtx = _selectedStationKey.currentContext != null;
+
+          final targetContext = _inTransitKey.currentContext ??
+              _trainPositionKey.currentContext ??
+              _selectedStationKey.currentContext;
+
+          debugPrint('[ServiceDetailScreen] postFrameCallback scroll target evaluation:');
+          debugPrint('  - _inTransitKey present: $hasInTransitCtx');
+          debugPrint('  - _trainPositionKey present: $hasTrainPosCtx');
+          debugPrint('  - _selectedStationKey present: $hasSelectedStationCtx');
+          debugPrint('  - Selected targetContext: ${targetContext != null ? "FOUND" : "NULL"}');
+
           if (targetContext != null) {
             Scrollable.ensureVisible(
               targetContext,
@@ -167,6 +181,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       timestamps.add(null);
     }
 
+    debugPrint('[ServiceDetailScreen] Processed service data:');
+    debugPrint('  - trainIdentity (Headcode): "${service.trainIdentity}"');
+    debugPrint('  - serviceUid: "${service.serviceUid}"');
+    debugPrint('  - total locations: ${service.locations.length}');
+
     setState(() {
       _serviceDetail = service;
       _locationTimestamps = timestamps;
@@ -192,7 +211,10 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       final status = (loc.serviceLocation ?? '').toUpperCase();
       return status == 'AT_PLAT' || status == 'APPR_PLAT' || status == 'APPR_STAT';
     });
-    if (explicitStatusIndex != -1) return explicitStatusIndex;
+    if (explicitStatusIndex != -1) {
+      debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Explicit platform status at index $explicitStatusIndex (${locations[explicitStatusIndex].locationName}, status: ${locations[explicitStatusIndex].serviceLocation})');
+      return explicitStatusIndex;
+    }
 
     int lastActualIndex = -1;
     for (int i = 0; i < locations.length; i++) {
@@ -201,6 +223,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       }
     }
     if (lastActualIndex != -1) {
+      debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Last actual report at index $lastActualIndex (${locations[lastActualIndex].locationName})');
       return lastActualIndex;
     }
 
@@ -214,7 +237,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         break;
       }
     }
-    return lastDepartedIndex != -1 ? lastDepartedIndex : 0;
+    final resultIdx = lastDepartedIndex != -1 ? lastDepartedIndex : 0;
+    debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Timestamp check index $resultIdx (${locations[resultIdx].locationName})');
+    return resultIdx;
   }
 
   int _findTrainPositionIndex(ServiceDetail? service) {
@@ -315,6 +340,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
     return ListView.builder(
       controller: _scrollController,
+      cacheExtent: 20000.0,
       itemCount: displayLocations.length + 1, // +1 for the header
       itemBuilder: (context, index) {
         if (index == 0) {
@@ -380,8 +406,17 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         final isFinalDestination = locationIndex == displayLocations.length - 1;
         final isFirstStation = locationIndex == 0;
 
+        final currentLocation = displayLocations[activeTrainIdx];
+        final currentStatus = (currentLocation.serviceLocation ?? '').toUpperCase();
+        final bool isAtOrApproachingPlatform = currentStatus == 'AT_PLAT' ||
+            currentStatus == 'APPR_PLAT' ||
+            currentStatus == 'APPR_STAT';
+        final bool hasDepartedOrigin = activeTrainIdx > 0 || currentLocation.hasActualReport;
+
         final bool isTrainInTransitHere = activeTrainIdx == locationIndex &&
-            locationIndex < displayLocations.length - 1;
+            locationIndex < displayLocations.length - 1 &&
+            !isAtOrApproachingPlatform &&
+            hasDepartedOrigin;
 
         Key? itemKey;
         if (locationIndex == activeTrainIdx) {
@@ -402,14 +437,17 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               key: itemKey,
             ),
             if (isTrainInTransitHere && !isCancelled)
-              _buildInTransitView(displayLocations[activeTrainIdx]),
+              _buildInTransitView(
+                displayLocations[activeTrainIdx],
+                key: _inTransitKey,
+              ),
           ],
         );
       },
     );
   }
 
-  Widget _buildInTransitView(CallingPoint lastDepartedStation) {
+  Widget _buildInTransitView(CallingPoint lastDepartedStation, {Key? key}) {
     final theme = Theme.of(context);
     String lateness = "On time";
     Color latenessColor = Colors.green;
@@ -424,6 +462,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     }
 
     return IntrinsicHeight(
+      key: key,
       child: Row(
         children: [
           SizedBox(

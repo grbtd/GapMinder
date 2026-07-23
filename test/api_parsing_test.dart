@@ -248,6 +248,47 @@ void main() {
       expect(detail.origin, "Birmingham New Street");
       expect(detail.destination, "Manchester Piccadilly");
     });
+
+    test('should parse trainReportingIdentity correctly and not use serviceUid as headcode', () {
+      final jsonStr = '''
+      {
+        "query": { "uniqueIdentity": "gb-nr:W12345:2026-07-23" },
+        "service": {
+          "trainReportingIdentity": "1A23",
+          "scheduleMetadata": {
+            "uniqueIdentity": "gb-nr:W12345:2026-07-23",
+            "identity": "gb-nr:W12345:2026-07-23"
+          },
+          "origin": [{ "description": "London Waterloo" }],
+          "destination": [{ "description": "Exeter St Davids" }]
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final detail = ServiceDetail.fromJson(json);
+
+      expect(detail.serviceUid, "gb-nr:W12345:2026-07-23");
+      expect(detail.trainIdentity, "1A23");
+    });
+
+    test('should leave trainIdentity empty if only serviceUid is present in schedule identity', () {
+      final jsonStr = '''
+      {
+        "service": {
+          "scheduleMetadata": {
+            "uniqueIdentity": "gb-nr:W12345:2026-07-23",
+            "identity": "gb-nr:W12345:2026-07-23"
+          }
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final detail = ServiceDetail.fromJson(json);
+
+      expect(detail.serviceUid, "gb-nr:W12345:2026-07-23");
+      expect(detail.trainIdentity, "");
+    });
   });
 }
+
 
