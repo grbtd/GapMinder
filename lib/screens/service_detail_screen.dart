@@ -510,6 +510,44 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
     final hasArrived = !isCancelled && (location.realtimeArrival?.isNotEmpty ?? false);
 
+    int? prevCoachCount;
+    if (_serviceDetail != null) {
+      final displayLocations = _prefs.isNerdMode
+          ? _serviceDetail!.locations
+          : _serviceDetail!.locations.where((loc) => loc.serviceLocation != 'PASS').toList();
+      for (int i = index - 1; i >= 0; i--) {
+        if (displayLocations[i].coachCount != null) {
+          prevCoachCount = displayLocations[i].coachCount;
+          break;
+        }
+      }
+    }
+
+    Widget? formationWidget;
+    if (location.coachCount != null) {
+      if (prevCoachCount != null && location.coachCount! > prevCoachCount) {
+        final diff = location.coachCount! - prevCoachCount;
+        formationWidget = _buildFormationTag(
+          "${location.coachCount} Coaches (+$diff attached)",
+          Icons.trending_up,
+          Colors.green,
+        );
+      } else if (prevCoachCount != null && location.coachCount! < prevCoachCount) {
+        final diff = prevCoachCount - location.coachCount!;
+        formationWidget = _buildFormationTag(
+          "${location.coachCount} Coaches (-$diff detached)",
+          Icons.trending_down,
+          Colors.orange,
+        );
+      } else if (prevCoachCount == null || isFirstStation) {
+        formationWidget = _buildFormationTag(
+          "${location.coachCount} Coaches",
+          Icons.train,
+          theme.colorScheme.secondary,
+        );
+      }
+    }
+
     Color circleColor = (hasDeparted || isCancelled)
         ? Colors.grey
         : theme.colorScheme.primary;
@@ -588,6 +626,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     ),
                   const SizedBox(height: 4),
                   _buildStopTimes(location, isCancelled),
+                  if (formationWidget != null && !isCancelled)
+                    formationWidget,
                   if (isAtPlatform && !isCancelled)
                     _buildStatusTag("AT PLATFORM", Colors.blue),
                   if (isApproaching && !isCancelled)
@@ -783,6 +823,33 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           fontWeight: FontWeight.bold,
           fontSize: 10,
         ),
+      ),
+    );
+  }
+
+  Widget _buildFormationTag(String text, IconData icon, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

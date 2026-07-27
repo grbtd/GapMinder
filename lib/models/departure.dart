@@ -108,12 +108,15 @@ class Departure {
         return 'CANCELLED';
       }
 
-      // Prioritize serviceLocation (e.g. AT_PLAT, APPR_STAT) for live positioning in UI
+      // Prioritize explicit live positioning (AT_PLAT, APPR_PLAT, APPR_STAT)
       final serviceLocation = locationDetail['serviceLocation']?.toString() ??
           metadata['serviceLocation']?.toString() ??
           json['serviceLocation']?.toString();
       if (serviceLocation != null && serviceLocation.isNotEmpty) {
-        return serviceLocation;
+        final locUpper = serviceLocation.toUpperCase();
+        if (locUpper == 'AT_PLAT' || locUpper == 'APPR_PLAT' || locUpper == 'APPR_STAT') {
+          return locUpper;
+        }
       }
 
       // Fallback to structured lateness information

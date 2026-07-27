@@ -114,7 +114,7 @@ int? parseCoachCount(dynamic rawData, [dynamic secondaryData, dynamic tertiaryDa
       }
     }
     if (data is Map) {
-      final val = data['length'] ?? data['coaches'] ?? data['coachCount'] ?? data['carriages'] ?? data['count'];
+      final val = data['numberOfVehicles'] ?? data['length'] ?? data['coaches'] ?? data['coachCount'] ?? data['carriages'] ?? data['count'];
       final parsed = parseCoachCount(val);
       if (parsed != null) return parsed;
     }
@@ -186,9 +186,9 @@ int? parseCoachCountFromService({
   required List<dynamic> locationsList,
 }) {
   int? coachCount = parseCoachCount(
-    json['length'] ?? json['coaches'] ?? json['formation'] ?? json['trainLength'],
-    schedule['length'] ?? schedule['coaches'] ?? schedule['formation'] ?? schedule['coachCount'],
-    metadata['length'] ?? metadata['coaches'] ?? metadata['formation'],
+    json['numberOfVehicles'] ?? json['length'] ?? json['coaches'] ?? json['formation'] ?? json['trainLength'],
+    schedule['numberOfVehicles'] ?? schedule['length'] ?? schedule['coaches'] ?? schedule['formation'] ?? schedule['coachCount'],
+    metadata['numberOfVehicles'] ?? metadata['length'] ?? metadata['coaches'] ?? metadata['formation'],
   );
 
   if (coachCount == null) {
@@ -196,10 +196,12 @@ int? parseCoachCountFromService({
       if (loc is Map<String, dynamic>) {
         final temp = (loc['temporalData'] as Map<String, dynamic>?) ?? {};
         final locMeta = (loc['locationMetadata'] as Map<String, dynamic>?) ?? {};
+        final locDetail = (loc['locationDetail'] as Map<String, dynamic>?) ?? {};
+        final geo = (loc['location'] as Map<String, dynamic>?) ?? {};
         final found = parseCoachCount(
-          loc['length'] ?? loc['coaches'] ?? loc['formation'],
-          temp['length'] ?? temp['coaches'],
-          locMeta['length'] ?? locMeta['coaches'],
+          loc['numberOfVehicles'] ?? loc['length'] ?? loc['coaches'] ?? loc['formation'],
+          temp['numberOfVehicles'] ?? temp['length'] ?? temp['coaches'],
+          locMeta['numberOfVehicles'] ?? locMeta['length'] ?? locMeta['coaches'] ?? locDetail['numberOfVehicles'] ?? geo['numberOfVehicles'],
         );
         if (found != null) {
           coachCount = found;

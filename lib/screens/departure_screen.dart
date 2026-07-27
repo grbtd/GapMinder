@@ -27,6 +27,8 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
   List<Departure>? _departures;
   String? _error;
+  String? _loadingStatus;
+  DateTime? _pivotTime;
   bool _isLoading = true;
   bool _isGroupingByPlatform = false;
   Map<String, List<Departure>> _groupedDepartures = {};
@@ -70,6 +72,56 @@ class _DepartureScreenState extends State<DepartureScreen> {
     });
   }
 
+  DateTime? _parseDepartureTime(Departure dep) {
+    final timeStr = dep.realtimeTime ?? dep.scheduledTime;
+    if (timeStr == null || timeStr.length < 4) return null;
+    try {
+      final hour = int.parse(timeStr.substring(0, 2));
+      final minute = int.parse(timeStr.substring(2, 4));
+      final ref = _pivotTime ?? DateTime.now();
+      return DateTime(ref.year, ref.month, ref.day, hour, minute);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _jumpEarlier() {
+    final ref = _pivotTime ?? DateTime.now();
+    DateTime target = ref.subtract(const Duration(minutes: 20));
+    if (_departures != null && _departures!.isNotEmpty) {
+      final firstTime = _parseDepartureTime(_departures!.first);
+      if (firstTime != null) {
+        target = firstTime.subtract(const Duration(minutes: 20));
+      }
+    }
+    setState(() {
+      _pivotTime = target;
+    });
+    _loadDepartures();
+  }
+
+  void _jumpLater() {
+    final ref = _pivotTime ?? DateTime.now();
+    DateTime target = ref.add(const Duration(minutes: 20));
+    if (_departures != null && _departures!.isNotEmpty) {
+      final lastTime = _parseDepartureTime(_departures!.last);
+      if (lastTime != null) {
+        target = lastTime.add(const Duration(minutes: 1));
+      }
+    }
+    setState(() {
+      _pivotTime = target;
+    });
+    _loadDepartures();
+  }
+
+  void _resetToNow() {
+    setState(() {
+      _pivotTime = null;
+    });
+    _loadDepartures();
+  }
+
   Future<void> _loadDepartures({bool isRefresh = false}) async {
     if (!mounted) return;
 
@@ -77,12 +129,24 @@ class _DepartureScreenState extends State<DepartureScreen> {
     if (!isRefresh) {
       setState(() {
         _isLoading = true;
+        _loadingStatus = 'Fetching departures...';
         _error = null;
       });
     }
 
     try {
-      final departures = await _apiService.fetchDepartures(widget.station.crsCode, forceRefresh: isRefresh);
+      final departures = await _apiService.fetchDepartures(
+        widget.station.crsCode,
+        forceRefresh: isRefresh,
+        pivotTime: _pivotTime,
+        onProgress: (status) {
+          if (mounted && !isRefresh) {
+            setState(() {
+              _loadingStatus = status;
+            });
+          }
+        },
+      );
       if (!mounted) return;
 
       Map<String, List<Departure>> grouped = {};
@@ -95,6 +159,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
         _departures = departures;
         _groupedDepartures = grouped;
         _isLoading = false;
+        _loadingStatus = null;
         _error = null;
       });
     } catch (e) {
@@ -103,10 +168,61 @@ class _DepartureScreenState extends State<DepartureScreen> {
         setState(() {
           _error = "Failed to load departures: ${e.toString()}";
           _isLoading = false;
+          _loadingStatus = null;
         });
       }
     }
     _countdownKey.currentState?.reset();
+  }
+
+  Widget _buildPivotTimeBanner() {
+    final formattedTime = _pivotTime != null ? DateFormat('HH:mm').format(_pivotTime!) : '';
+    return Container(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(Icons.schedule, size: 18, color: Theme.of(context).colorScheme.onPrimaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "Viewing departures around $formattedTime",
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: _isLoading ? null : _resetToNow,
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text("Reset to Now"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimeJumpButton({required bool isTop}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+          minimumSize: const Size.fromHeight(44),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: _isLoading ? null : (isTop ? _jumpEarlier : _jumpLater),
+        icon: Icon(
+          isTop ? Icons.arrow_upward : Icons.arrow_downward,
+          size: 18,
+        ),
+        label: Text(
+          isTop ? "Jump to earlier departures" : "Jump to later departures",
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
   }
 
   void _onDepartureTapped(Departure departure) {
@@ -187,7 +303,27 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
   Widget _buildBody() {
     if (_isLoading && _departures == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              if (_loadingStatus != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _loadingStatus!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     if (_error != null) {
@@ -207,26 +343,49 @@ class _DepartureScreenState extends State<DepartureScreen> {
   }
 
   Widget _buildListView() {
+    final departuresCount = _departures?.length ?? 0;
+    final itemCount = departuresCount + 2;
+
     return LayoutBuilder(builder: (context, constraints) {
       if (constraints.maxWidth > 600) {
-        return GridView.builder(
-          padding: const EdgeInsets.all(8.0),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 400.0,
-            mainAxisSpacing: 8.0,
-            crossAxisSpacing: 8.0,
-            childAspectRatio: 3.5,
-          ),
-          itemCount: _departures!.length,
-          itemBuilder: (context, index) {
-            return _buildDepartureCard(_departures![index]);
-          },
+        return Column(
+          children: [
+            if (_pivotTime != null) _buildPivotTimeBanner(),
+            _buildTimeJumpButton(isTop: true),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(8.0),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 400.0,
+                  mainAxisSpacing: 8.0,
+                  crossAxisSpacing: 8.0,
+                  childAspectRatio: 3.5,
+                ),
+                itemCount: departuresCount,
+                itemBuilder: (context, index) {
+                  return _buildDepartureCard(_departures![index]);
+                },
+              ),
+            ),
+            _buildTimeJumpButton(isTop: false),
+          ],
         );
       } else {
         return ListView.builder(
-          itemCount: _departures!.length,
+          itemCount: itemCount,
           itemBuilder: (context, index) {
-            return _buildDepartureCard(_departures![index]);
+            if (index == 0) {
+              return Column(
+                children: [
+                  if (_pivotTime != null) _buildPivotTimeBanner(),
+                  _buildTimeJumpButton(isTop: true),
+                ],
+              );
+            }
+            if (index == itemCount - 1) {
+              return _buildTimeJumpButton(isTop: false);
+            }
+            return _buildDepartureCard(_departures![index - 1]);
           },
         );
       }
@@ -239,24 +398,36 @@ class _DepartureScreenState extends State<DepartureScreen> {
         bool isWide = constraints.maxWidth > 600;
 
         if (isWide) {
-          // Wide layout: Use a wrapping horizontal layout
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
-            child: Wrap(
-              spacing: 16.0,
-              runSpacing: 16.0,
-              children: _groupedDepartures.entries.map((entry) {
-                return _buildPlatformColumn(entry.key, entry.value, isWide: true);
-              }).toList(),
+            child: Column(
+              children: [
+                if (_pivotTime != null) _buildPivotTimeBanner(),
+                _buildTimeJumpButton(isTop: true),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 16.0,
+                  runSpacing: 16.0,
+                  children: _groupedDepartures.entries.map((entry) {
+                    return _buildPlatformColumn(entry.key, entry.value, isWide: true);
+                  }).toList(),
+                ),
+                const SizedBox(height: 8),
+                _buildTimeJumpButton(isTop: false),
+              ],
             ),
           );
         } else {
-          // Narrow layout: Use a vertical list
           return ListView(
             padding: const EdgeInsets.all(8.0),
-            children: _groupedDepartures.entries.map((entry) {
-              return _buildPlatformColumn(entry.key, entry.value, isWide: false);
-            }).toList(),
+            children: [
+              if (_pivotTime != null) _buildPivotTimeBanner(),
+              _buildTimeJumpButton(isTop: true),
+              ..._groupedDepartures.entries.map((entry) {
+                return _buildPlatformColumn(entry.key, entry.value, isWide: false);
+              }),
+              _buildTimeJumpButton(isTop: false),
+            ],
           );
         }
       },
@@ -459,10 +630,14 @@ class _DepartureScreenState extends State<DepartureScreen> {
     Color tagColor;
     String statusText = _formatStatusText(status, isGrouped: isGrouped);
 
-    switch (status) {
+    switch (status.toUpperCase()) {
       case "LATE":
       case "EARLY":
       case "ON TIME":
+      case "CALL":
+      case "STARTS":
+      case "TERMINATES":
+      case "PASS":
         return const SizedBox.shrink();
       case "CANCELLED":
         tagColor = Colors.red;
@@ -470,8 +645,12 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "AT_PLAT":
         tagColor = Colors.blue;
         break;
-      default: // APPR_STAT, APPR_PLAT, etc. TODO: Maybe we can colour code these a little nicer?
+      case "APPR_STAT":
+      case "APPR_PLAT":
         tagColor = Colors.orange;
+        break;
+      default:
+        return const SizedBox.shrink();
     }
 
     return Container(

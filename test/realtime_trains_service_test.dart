@@ -78,5 +78,60 @@ void main() {
       expect(getAccessTokenCalls, 2);
       expect(locationCalls, 2);
     });
+
+    test('invokes onProgress callback during fetchDepartures', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/get_access_token') {
+          return http.Response(
+            jsonEncode({'accessToken': 'test-token', 'expiresIn': 3600}),
+            200,
+          );
+        } else if (request.url.path.contains('/location')) {
+          return http.Response(
+            jsonEncode({
+              'services': [
+                {
+                  'serviceUid': 'W12345',
+                  'runDate': '2026-07-27',
+                  'locationDetail': {
+                    'destination': [{'description': 'Waterloo'}],
+                  },
+                }
+              ]
+            }),
+            200,
+          );
+        } else if (request.url.path.contains('/service')) {
+          return http.Response(
+            jsonEncode({
+              'service': {
+                'serviceUid': 'W12345',
+                'runDate': '2026-07-27',
+                'locations': [
+                  {'crs': 'WAT', 'gbttBookedDeparture': '12:00'}
+                ]
+              }
+            }),
+            200,
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final service = RealtimeTrainsService(
+        client: mockClient,
+        secretsLoader: () async => Secrets(token: 'secret-user-token'),
+      );
+
+      final List<String> progressLogs = [];
+      await service.fetchDepartures('WAT', onProgress: (msg) {
+        progressLogs.add(msg);
+      });
+
+      expect(progressLogs, isNotEmpty);
+      expect(progressLogs.first, equals('Fetching departure board...'));
+      expect(progressLogs.any((log) => log.contains('Processing services')), isTrue);
+    });
   });
 }
+

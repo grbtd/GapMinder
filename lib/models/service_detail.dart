@@ -91,7 +91,9 @@ class ServiceDetail {
       schedule: schedule,
       metadata: metadata,
       locationsList: locationsList,
-    );
+    ) ?? (locations.isNotEmpty
+        ? locations.firstWhere((l) => l.coachCount != null, orElse: () => locations.first).coachCount
+        : null);
 
     return ServiceDetail(
       serviceUid: serviceUidStr.isNotEmpty ? serviceUidStr : 'UNKNOWN',
@@ -118,6 +120,7 @@ class CallingPoint {
   final String? serviceLocation;
   final int departureLateness;
   final bool hasActualReport;
+  final int? coachCount;
 
   CallingPoint({
     required this.locationName,
@@ -130,6 +133,7 @@ class CallingPoint {
     required this.serviceLocation,
     required this.departureLateness,
     this.hasActualReport = false,
+    this.coachCount,
   });
 
   factory CallingPoint.fromJson(Map<String, dynamic> json) {
@@ -204,6 +208,12 @@ class CallingPoint {
       json['serviceLocation']
     );
 
+    final callingPointCoachCount = parseCoachCount(
+      json['numberOfVehicles'] ?? json['length'] ?? json['coaches'] ?? json['formation'],
+      locationMetadata['numberOfVehicles'] ?? locationMetadata['length'] ?? locationMetadata['coaches'],
+      locationDetail['numberOfVehicles'] ?? temporal['numberOfVehicles'] ?? geo['numberOfVehicles'],
+    );
+
     return CallingPoint(
       locationName: locationDesc != 'Unknown' ? locationDesc : null,
       crs: crsCode,
@@ -215,6 +225,7 @@ class CallingPoint {
       serviceLocation: isPassPoint ? 'PASS' : displayAsStr,
       departureLateness: int.tryParse(asString(lateness) ?? '0') ?? 0,
       hasActualReport: hasActual,
+      coachCount: callingPointCoachCount,
     );
   }
 }

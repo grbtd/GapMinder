@@ -165,31 +165,44 @@ class RealtimeTrainsService {
     return {'uid': uid, 'date': date};
   }
 
-  bool _isWithinTimeWindow(Departure dep, {required DateTime now, Duration windowDuration = const Duration(minutes: 30)}) {
+  DateTime? _getDepartureDateTime(Departure dep, DateTime referenceDate) {
     final timeStr = dep.realtimeTime ?? dep.scheduledTime;
-    if (timeStr == null || timeStr.length < 4) return true;
+    if (timeStr == null || timeStr.length < 4) return null;
 
     try {
       final hour = int.parse(timeStr.substring(0, 2));
       final minute = int.parse(timeStr.substring(2, 4));
 
-      DateTime depDate = DateTime(now.year, now.month, now.day, hour, minute);
+      DateTime depDate = DateTime(referenceDate.year, referenceDate.month, referenceDate.day, hour, minute);
 
-      // Handle midnight wrap
-      if (now.hour == 23 && hour == 0) {
+      // Handle midnight wrap relative to referenceDate
+      if (referenceDate.hour == 23 && hour == 0) {
         depDate = depDate.add(const Duration(days: 1));
-      } else if (now.hour == 0 && hour == 23) {
+      } else if (referenceDate.hour == 0 && hour == 23) {
         depDate = depDate.subtract(const Duration(days: 1));
       }
 
-      final diff = depDate.difference(now);
-      return diff.inMinutes >= -5 && diff.inMinutes <= windowDuration.inMinutes;
+      return depDate;
     } catch (_) {
-      return true;
+      return null;
     }
   }
 
-  Future<List<Departure>> fetchDepartures(String crsCode, {bool forceRefresh = false}) async {
+  bool _isWithinTimeWindow(Departure dep, {required DateTime now, Duration windowDuration = const Duration(minutes: 30)}) {
+    final depDate = _getDepartureDateTime(dep, now);
+    if (depDate == null) return true;
+
+    final diff = depDate.difference(now);
+    return diff.inMinutes >= -5 && diff.inMinutes <= windowDuration.inMinutes;
+  }
+
+  Future<List<Departure>> fetchDepartures(
+    String crsCode, {
+    bool forceRefresh = false,
+    DateTime? pivotTime,
+    void Function(String statusMessage)? onProgress,
+  }) async {
+    onProgress?.call('Fetching departure board...');
     final cleanCrs = crsCode.trim().toUpperCase();
     final url = Uri.parse('https://data.rtt.io/rtt/location?code=gb-nr:$cleanCrs');
 
@@ -214,23 +227,51 @@ class RealtimeTrainsService {
       }
     });
 
-    // Filter to departures within the next 30 minutes (-5m to +30m)
-    final now = DateTime.now();
-    final upcomingDepartures = departures
-        .where((dep) => _isWithinTimeWindow(dep, now: now, windowDuration: const Duration(minutes: 30)))
-        .toList();
+    final referenceTime = pivotTime ?? DateTime.now();
 
-    final targetList = upcomingDepartures.isNotEmpty ? upcomingDepartures : departures.take(15).toList();
+    // Sort departures chronologically relative to referenceTime
+    List<Departure> sortedDepartures = List.from(departures);
+    sortedDepartures.sort((a, b) {
+      final aTime = _getDepartureDateTime(a, referenceTime);
+      final bTime = _getDepartureDateTime(b, referenceTime);
+      if (aTime == null || bTime == null) return 0;
+      return aTime.compareTo(bTime);
+    });
+
+    // Filter to departures starting from 5 minutes before referenceTime
+    final upcomingDepartures = sortedDepartures.where((dep) {
+      final depTime = _getDepartureDateTime(dep, referenceTime);
+      if (depTime == null) return true;
+      final diff = depTime.difference(referenceTime);
+      return diff.inMinutes >= -5;
+    }).toList();
+
+    // Cap to a strict limit of 12 services max to prevent rate limits
+    final targetList = (upcomingDepartures.isNotEmpty ? upcomingDepartures : sortedDepartures).take(12).toList();
+
+    if (targetList.isEmpty) {
+      onProgress?.call('No departures found.');
+      return [];
+    }
 
     // Process pre-fetching in small controlled batches (3 at a time) to avoid hitting API rate limits
     const batchSize = 3;
     final enrichedDepartures = <Departure>[];
 
     for (var i = 0; i < targetList.length; i += batchSize) {
-      final batch = targetList.sublist(
-        i,
-        (i + batchSize < targetList.length) ? i + batchSize : targetList.length,
-      );
+      final end = (i + batchSize < targetList.length) ? i + batchSize : targetList.length;
+      final batch = targetList.sublist(i, end);
+
+      final destinations = batch
+          .map((d) => d.destination)
+          .where((d) => d.isNotEmpty && d != 'Unknown Destination')
+          .toSet()
+          .join(', ');
+
+      final statusText = destinations.isNotEmpty
+          ? 'Processing services ($end of ${targetList.length}): $destinations'
+          : 'Processing services ($end of ${targetList.length})...';
+      onProgress?.call(statusText);
 
       final batchResults = await Future.wait(batch.map((dep) async {
         if (dep.serviceUid.isEmpty) return dep;
@@ -250,6 +291,14 @@ class RealtimeTrainsService {
             }
           }
 
+          String? updatedStatus = dep.status;
+          if (stop?.serviceLocation != null) {
+            final locUpper = stop!.serviceLocation!.toUpperCase();
+            if (locUpper == 'AT_PLAT' || locUpper == 'APPR_PLAT' || locUpper == 'APPR_STAT') {
+              updatedStatus = locUpper;
+            }
+          }
+
           return dep.copyWith(
             serviceUid: dep.serviceUid.isNotEmpty ? dep.serviceUid : detail.serviceUid,
             destination: detail.destination != 'Unknown Destination' ? detail.destination : dep.destination,
@@ -257,7 +306,7 @@ class RealtimeTrainsService {
             platform: (stop?.platform != null && stop!.platform!.isNotEmpty) ? stop.platform : dep.platform,
             scheduledTime: stop?.gbttBookedDeparture ?? stop?.gbttBookedArrival ?? dep.scheduledTime,
             realtimeTime: stop?.realtimeDeparture ?? stop?.realtimeArrival ?? dep.realtimeTime,
-            status: stop?.serviceLocation ?? dep.status,
+            status: updatedStatus,
           );
         } catch (_) {
           return dep;

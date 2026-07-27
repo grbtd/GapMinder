@@ -323,11 +323,41 @@ void main() {
       ''';
       final json = jsonDecode(jsonStr);
       final detail = ServiceDetail.fromJson(json);
-
       expect(detail.serviceUid, "gb-nr:W12345:2026-07-23");
       expect(detail.trainIdentity, "");
     });
+
+    test('should parse numberOfVehicles on ServiceDetail and CallingPoints for formation changes', () {
+      final jsonStr = '''
+      {
+        "service": {
+          "serviceUid": "W12345",
+          "runDate": "2026-07-27",
+          "locations": [
+            {
+              "crs": "WAT",
+              "description": "London Waterloo",
+              "numberOfVehicles": 8
+            },
+            {
+              "crs": "BSK",
+              "description": "Basingstoke",
+              "numberOfVehicles": 4
+            }
+          ]
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final detail = ServiceDetail.fromJson(json);
+
+      expect(detail.coachCount, 8);
+      expect(detail.locations.length, 2);
+      expect(detail.locations[0].coachCount, 8);
+      expect(detail.locations[1].coachCount, 4);
+    });
   });
 }
+
 
 
