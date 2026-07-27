@@ -552,9 +552,13 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         ? Colors.grey
         : theme.colorScheme.primary;
 
+    final bool isPassPoint = location.serviceLocation == 'PASS';
+
     IconData circleIcon;
     if (isCancelled) {
       circleIcon = Icons.cancel;
+    } else if (isPassPoint) {
+      circleIcon = Icons.fast_forward;
     } else if (isSelectedStation) {
       circleIcon = Icons.location_pin;
     } else if (isAtPlatform) {
