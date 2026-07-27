@@ -29,6 +29,9 @@ class RealtimeTrainsService {
   final Map<String, ServiceDetail> _serviceCache = {};
   final Map<String, DateTime> _serviceCacheTime = {};
 
+  final Map<String, List<Departure>> _locationCache = {};
+  final Map<String, DateTime> _locationCacheTime = {};
+
   factory RealtimeTrainsService({
     http.Client? client,
     Future<Secrets> Function()? secretsLoader,
@@ -196,17 +199,21 @@ class RealtimeTrainsService {
     return diff.inMinutes >= -5 && diff.inMinutes <= windowDuration.inMinutes;
   }
 
-  Future<List<Departure>> fetchDepartures(
-    String crsCode, {
-    bool forceRefresh = false,
-    DateTime? pivotTime,
-    void Function(String statusMessage)? onProgress,
-  }) async {
-    onProgress?.call('Fetching departure board...');
-    final cleanCrs = crsCode.trim().toUpperCase();
-    final url = Uri.parse('https://data.rtt.io/rtt/location?code=gb-nr:$cleanCrs');
+  Future<List<Departure>> _fetchLocationFromApi(String cleanCrs, {DateTime? pivotTime}) async {
+    Uri url;
+    if (pivotTime != null) {
+      final year = pivotTime.year;
+      final month = pivotTime.month.toString().padLeft(2, '0');
+      final day = pivotTime.day.toString().padLeft(2, '0');
+      final hour = pivotTime.hour.toString().padLeft(2, '0');
+      final minute = pivotTime.minute.toString().padLeft(2, '0');
+      url = Uri.parse('https://data.rtt.io/rtt/location?code=gb-nr:$cleanCrs&date=$year-$month-$day&time=$hour$minute');
+    } else {
+      url = Uri.parse('https://data.rtt.io/rtt/location?code=gb-nr:$cleanCrs');
+    }
 
-    List<Departure> departures = await _executeWithRetry((headers) async {
+    return _executeWithRetry((headers) async {
+      debugPrint('[RealtimeTrainsService] HTTP GET $url');
       final response = await _client.get(url, headers: headers);
 
       if (response.statusCode == 200) {
@@ -226,28 +233,92 @@ class RealtimeTrainsService {
         throw Exception('Failed to load departures: status ${response.statusCode}');
       }
     });
+  }
 
+  Future<List<Departure>> fetchDepartures(
+    String crsCode, {
+    bool forceRefresh = false,
+    DateTime? pivotTime,
+    void Function(String statusMessage)? onProgress,
+  }) async {
+    onProgress?.call('Fetching departure board...');
+    final cleanCrs = crsCode.trim().toUpperCase();
     final referenceTime = pivotTime ?? DateTime.now();
 
+    final dateStr = "${referenceTime.year}-${referenceTime.month.toString().padLeft(2, '0')}-${referenceTime.day.toString().padLeft(2, '0')}";
+    final timeStr = "${referenceTime.hour.toString().padLeft(2, '0')}${referenceTime.minute.toString().padLeft(2, '0')}";
+    final cacheKey = '$cleanCrs:${pivotTime != null ? "${dateStr}_$timeStr" : "live"}';
+
+    List<Departure> departures;
+
+    if (!forceRefresh && _locationCache.containsKey(cacheKey)) {
+      final cacheTime = _locationCacheTime[cacheKey];
+      if (cacheTime != null && cacheTime.isAfter(DateTime.now().subtract(const Duration(minutes: 5)))) {
+        debugPrint('[RealtimeTrainsService] Using cached location board for $cacheKey');
+        departures = _locationCache[cacheKey]!;
+      } else {
+        departures = await _fetchLocationFromApi(cleanCrs, pivotTime: pivotTime);
+        _locationCache[cacheKey] = departures;
+        _locationCacheTime[cacheKey] = DateTime.now();
+      }
+    } else {
+      departures = await _fetchLocationFromApi(cleanCrs, pivotTime: pivotTime);
+      _locationCache[cacheKey] = departures;
+      _locationCacheTime[cacheKey] = DateTime.now();
+    }
+
+    debugPrint('[RealtimeTrainsService] fetchDepartures for $cleanCrs (pivotTime: $pivotTime)');
+
+    // Filter out departures with missing time info if possible
+    List<Departure> validDepartures = departures.where((dep) {
+      return _getDepartureDateTime(dep, referenceTime) != null;
+    }).toList();
+
+    if (validDepartures.isEmpty) {
+      validDepartures = List.from(departures);
+    }
+
     // Sort departures chronologically relative to referenceTime
-    List<Departure> sortedDepartures = List.from(departures);
-    sortedDepartures.sort((a, b) {
+    validDepartures.sort((a, b) {
       final aTime = _getDepartureDateTime(a, referenceTime);
       final bTime = _getDepartureDateTime(b, referenceTime);
       if (aTime == null || bTime == null) return 0;
       return aTime.compareTo(bTime);
     });
 
-    // Filter to departures starting from 5 minutes before referenceTime
-    final upcomingDepartures = sortedDepartures.where((dep) {
-      final depTime = _getDepartureDateTime(dep, referenceTime);
-      if (depTime == null) return true;
-      final diff = depTime.difference(referenceTime);
-      return diff.inMinutes >= -5;
-    }).toList();
+    // Find the starting index in validDepartures closest to referenceTime
+    int startIndex = 0;
+    if (pivotTime != null) {
+      int closestIdx = -1;
+      for (int i = 0; i < validDepartures.length; i++) {
+        final depTime = _getDepartureDateTime(validDepartures[i], referenceTime);
+        if (depTime != null && depTime.isAfter(referenceTime.subtract(const Duration(minutes: 5)))) {
+          closestIdx = i;
+          break;
+        }
+      }
+      if (closestIdx != -1) {
+        final shift = referenceTime.isBefore(DateTime.now()) ? 2 : 0;
+        startIndex = (closestIdx - shift).clamp(0, validDepartures.length - 1);
+      } else {
+        startIndex = (validDepartures.length - 12).clamp(0, validDepartures.length - 1);
+      }
+    } else {
+      final now = DateTime.now();
+      for (int i = 0; i < validDepartures.length; i++) {
+        final depTime = _getDepartureDateTime(validDepartures[i], now);
+        if (depTime != null && depTime.difference(now).inMinutes >= -5) {
+          startIndex = i;
+          break;
+        }
+      }
+    }
 
-    // Cap to a strict limit of 12 services max to prevent rate limits
-    final targetList = (upcomingDepartures.isNotEmpty ? upcomingDepartures : sortedDepartures).take(12).toList();
+    final targetList = validDepartures.sublist(
+      startIndex,
+      (startIndex + 12 < validDepartures.length) ? startIndex + 12 : validDepartures.length,
+    );
+    debugPrint('[RealtimeTrainsService] selected targetList count: ${targetList.length} (startIndex: $startIndex)');
 
     if (targetList.isEmpty) {
       onProgress?.call('No departures found.');

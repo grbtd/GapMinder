@@ -87,42 +87,30 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
   void _jumpEarlier() {
     final ref = _pivotTime ?? DateTime.now();
-    DateTime target = ref.subtract(const Duration(minutes: 20));
-    if (_departures != null && _departures!.isNotEmpty) {
-      final firstTime = _parseDepartureTime(_departures!.first);
-      if (firstTime != null) {
-        target = firstTime.subtract(const Duration(minutes: 20));
-      }
-    }
+    final target = ref.subtract(const Duration(minutes: 20));
     setState(() {
       _pivotTime = target;
     });
-    _loadDepartures();
+    _loadDepartures(isRefresh: false, forceRefresh: false);
   }
 
   void _jumpLater() {
     final ref = _pivotTime ?? DateTime.now();
-    DateTime target = ref.add(const Duration(minutes: 20));
-    if (_departures != null && _departures!.isNotEmpty) {
-      final lastTime = _parseDepartureTime(_departures!.last);
-      if (lastTime != null) {
-        target = lastTime.add(const Duration(minutes: 1));
-      }
-    }
+    final target = ref.add(const Duration(minutes: 20));
     setState(() {
       _pivotTime = target;
     });
-    _loadDepartures();
+    _loadDepartures(isRefresh: false, forceRefresh: false);
   }
 
   void _resetToNow() {
     setState(() {
       _pivotTime = null;
     });
-    _loadDepartures();
+    _loadDepartures(isRefresh: false, forceRefresh: false);
   }
 
-  Future<void> _loadDepartures({bool isRefresh = false}) async {
+  Future<void> _loadDepartures({bool isRefresh = false, bool forceRefresh = false}) async {
     if (!mounted) return;
 
     // Only show loading spinner on initial load
@@ -137,7 +125,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
     try {
       final departures = await _apiService.fetchDepartures(
         widget.station.crsCode,
-        forceRefresh: isRefresh,
+        forceRefresh: forceRefresh || isRefresh,
         pivotTime: _pivotTime,
         onProgress: (status) {
           if (mounted && !isRefresh) {
@@ -151,7 +139,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
       Map<String, List<Departure>> grouped = {};
       for (var dep in departures) {
-        final platformKey = (dep.platform?.isNotEmpty ?? false) ? "Platform ${dep.platform}" : "Platform TBC";
+        final platformKey = (dep.platform?.isNotEmpty ?? false) ? dep.platform! : "TBC";
         grouped.putIfAbsent(platformKey, () => []).add(dep);
       }
 

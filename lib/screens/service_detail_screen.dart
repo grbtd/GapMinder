@@ -558,7 +558,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     if (isCancelled) {
       circleIcon = Icons.cancel;
     } else if (isPassPoint) {
-      circleIcon = Icons.fast_forward;
+      circleIcon = hasDeparted ? Icons.fast_forward : Icons.fast_forward_outlined;
     } else if (isSelectedStation) {
       circleIcon = Icons.location_pin;
     } else if (isAtPlatform) {
@@ -566,9 +566,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     } else if (hasDeparted) {
       circleIcon = Icons.check_circle;
     } else if (isFinalDestination) {
-      circleIcon = Icons.flag;
+      circleIcon = hasDeparted ? Icons.flag : Icons.outlined_flag;
     } else {
-      circleIcon = Icons.circle;
+      circleIcon = Icons.circle_outlined;
     }
     
     Color topSegmentColor = (isFirstStation)

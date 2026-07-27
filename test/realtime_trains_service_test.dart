@@ -132,6 +132,52 @@ void main() {
       expect(progressLogs.first, equals('Fetching departure board...'));
       expect(progressLogs.any((log) => log.contains('Processing services')), isTrue);
     });
+
+    test('selects earlier services when pivotTime is earlier than current time', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/get_access_token') {
+          return http.Response(jsonEncode({'accessToken': 'test-token', 'expiresIn': 3600}), 200);
+        } else if (request.url.path.contains('/location')) {
+          return http.Response(
+            jsonEncode({
+              'services': [
+                {
+                  'serviceUid': 'EARLY1',
+                  'runDate': '2026-07-27',
+                  'locationDetail': {
+                    'gbttBookedDeparture': '08:00',
+                    'destination': [{'description': 'Waterloo'}],
+                  },
+                },
+                {
+                  'serviceUid': 'LATE1',
+                  'runDate': '2026-07-27',
+                  'locationDetail': {
+                    'gbttBookedDeparture': '22:00',
+                    'destination': [{'description': 'Portsmouth'}],
+                  },
+                }
+              ]
+            }),
+            200,
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final service = RealtimeTrainsService(
+        client: mockClient,
+        secretsLoader: () async => Secrets(token: 'secret-user-token'),
+      );
+
+      final now = DateTime.now();
+      final pastPivot = DateTime(now.year, now.month, now.day, 8, 0);
+
+      final departures = await service.fetchDepartures('WAT', pivotTime: pastPivot);
+      expect(departures, isNotEmpty);
+      expect(departures.first.serviceUid, equals('EARLY1'));
+    });
   });
 }
+
 
