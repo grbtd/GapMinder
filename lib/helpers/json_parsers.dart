@@ -125,3 +125,89 @@ int? parseCoachCount(dynamic rawData, [dynamic secondaryData, dynamic tertiaryDa
   }
   return null;
 }
+
+String parseTrainReportingIdentity({
+  required Map<String, dynamic> rawJson,
+  required Map<String, dynamic> serviceObj,
+  required Map<String, dynamic> schedule,
+  required Map<String, dynamic> metadata,
+  required Map<String, dynamic> serviceMetadata,
+  required String serviceUidStr,
+}) {
+  final candidates = [
+    // 1. Explicit trainReportingIdentity
+    schedule['trainReportingIdentity'],
+    serviceObj['trainReportingIdentity'],
+    rawJson['trainReportingIdentity'],
+    metadata['trainReportingIdentity'],
+    serviceMetadata['trainReportingIdentity'],
+    // 2. Explicit headcode
+    schedule['headcode'],
+    serviceObj['headcode'],
+    rawJson['headcode'],
+    metadata['headcode'],
+    serviceMetadata['headcode'],
+    // 3. trainIdentity
+    schedule['trainIdentity'],
+    serviceObj['trainIdentity'],
+    rawJson['trainIdentity'],
+    metadata['trainIdentity'],
+    serviceMetadata['trainIdentity'],
+    // 4. identity fallback
+    schedule['identity'],
+    serviceObj['identity'],
+    rawJson['identity'],
+    metadata['identity'],
+    serviceMetadata['identity'],
+  ];
+
+  for (final candidate in candidates) {
+    final str = asString(candidate);
+    if (str == null || str.isEmpty) continue;
+
+    // Reject namespace prefixes or colons
+    if (str.startsWith('gb-nr:') || str.contains(':')) continue;
+
+    // Reject any string that is part of the service UID (such as schedule identity UID "L79447" in "gb-nr:L79447:2026-07-22")
+    if (serviceUidStr.isNotEmpty && (serviceUidStr == str || serviceUidStr.contains(str))) {
+      continue;
+    }
+
+    return str;
+  }
+
+  return '';
+}
+
+int? parseCoachCountFromService({
+  required Map<String, dynamic> json,
+  required Map<String, dynamic> schedule,
+  required Map<String, dynamic> metadata,
+  required List<dynamic> locationsList,
+}) {
+  int? coachCount = parseCoachCount(
+    json['length'] ?? json['coaches'] ?? json['formation'] ?? json['trainLength'],
+    schedule['length'] ?? schedule['coaches'] ?? schedule['formation'] ?? schedule['coachCount'],
+    metadata['length'] ?? metadata['coaches'] ?? metadata['formation'],
+  );
+
+  if (coachCount == null) {
+    for (final loc in locationsList) {
+      if (loc is Map<String, dynamic>) {
+        final temp = (loc['temporalData'] as Map<String, dynamic>?) ?? {};
+        final locMeta = (loc['locationMetadata'] as Map<String, dynamic>?) ?? {};
+        final found = parseCoachCount(
+          loc['length'] ?? loc['coaches'] ?? loc['formation'],
+          temp['length'] ?? temp['coaches'],
+          locMeta['length'] ?? locMeta['coaches'],
+        );
+        if (found != null) {
+          coachCount = found;
+          break;
+        }
+      }
+    }
+  }
+  return coachCount;
+}
+

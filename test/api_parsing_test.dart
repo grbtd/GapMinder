@@ -271,6 +271,45 @@ void main() {
       expect(detail.trainIdentity, "1A23");
     });
 
+    test('should parse trainReportingIdentity 1L60 from scheduleMetadata in RTT-NG response', () {
+      final jsonStr = '''
+      {
+        "query": { "uniqueIdentity": "gb-nr:L79447:2026-07-22" },
+        "service": {
+          "scheduleMetadata": {
+            "uniqueIdentity": "gb-nr:L79447:2026-07-22",
+            "identity": "L79447",
+            "trainReportingIdentity": "1L60"
+          }
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final detail = ServiceDetail.fromJson(json);
+
+      expect(detail.serviceUid, "gb-nr:L79447:2026-07-22");
+      expect(detail.trainIdentity, "1L60");
+    });
+
+    test('should reject schedule identity L79447 when it is contained in serviceUid and no trainReportingIdentity exists', () {
+      final jsonStr = '''
+      {
+        "query": { "uniqueIdentity": "gb-nr:L79447:2026-07-22" },
+        "service": {
+          "scheduleMetadata": {
+            "uniqueIdentity": "gb-nr:L79447:2026-07-22",
+            "identity": "L79447"
+          }
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final detail = ServiceDetail.fromJson(json);
+
+      expect(detail.serviceUid, "gb-nr:L79447:2026-07-22");
+      expect(detail.trainIdentity, "");
+    });
+
     test('should leave trainIdentity empty if only serviceUid is present in schedule identity', () {
       final jsonStr = '''
       {

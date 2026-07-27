@@ -289,15 +289,19 @@ class RealtimeTrainsService {
       }
     }
 
+    final cleanIdentity = '$uid:$date';
+    final fullIdentity = 'gb-nr:$cleanIdentity';
+
     final candidateUrls = detailed
         ? <Uri>[
-            Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$identity'),
-            Uri.parse('https://data.rtt.io/gb-nr/service?code=$identity'),
-            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$identity&detailed=true'),
+            Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$cleanIdentity&detailed=true'),
+            Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$fullIdentity&detailed=true'),
+            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$fullIdentity&detailed=true'),
+            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$cleanIdentity&detailed=true'),
           ]
         : <Uri>[
-            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$identity&detailed=false'),
-            Uri.parse('https://data.rtt.io/rtt/service?code=$identity&detailed=false'),
+            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$fullIdentity&detailed=false'),
+            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$cleanIdentity&detailed=false'),
           ];
 
     return _executeWithRetry((headers) async {

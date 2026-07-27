@@ -47,8 +47,10 @@ class ServiceDetail {
         json['stops'] as List? ??
         rawJson['locations'] as List? ??
         [];
-    List<CallingPoint> locations =
-        locationsList.map((i) => CallingPoint.fromJson(i as Map<String, dynamic>)).toList();
+    List<CallingPoint> locations = locationsList
+        .whereType<Map<String, dynamic>>()
+        .map((i) => CallingPoint.fromJson(i))
+        .toList();
 
     var originStr = parseLocationDescription(originsData);
     var destinationStr = parseLocationDescription(destinationsData);
@@ -69,73 +71,27 @@ class ServiceDetail {
     }
     debugPrint('[ServiceDetail.fromJson] parsed serviceUidStr: "$serviceUidStr"');
 
-    final headcodeCandidates = [
-      rawJson['trainReportingIdentity'],
-      serviceObj['trainReportingIdentity'],
-      json['trainReportingIdentity'],
-      schedule['trainReportingIdentity'],
-      metadata['trainReportingIdentity'],
-      serviceMetadata['trainReportingIdentity'],
-      rawJson['headcode'],
-      serviceObj['headcode'],
-      json['headcode'],
-      schedule['headcode'],
-      metadata['headcode'],
-      serviceMetadata['headcode'],
-      rawJson['identity'],
-      serviceObj['identity'],
-      json['identity'],
-      schedule['identity'],
-      metadata['identity'],
-      serviceMetadata['identity'],
-      rawJson['trainIdentity'],
-      serviceObj['trainIdentity'],
-      json['trainIdentity'],
-    ];
+    final trainIdentityStr = parseTrainReportingIdentity(
+      rawJson: rawJson,
+      serviceObj: serviceObj,
+      schedule: schedule,
+      metadata: metadata,
+      serviceMetadata: serviceMetadata,
+      serviceUidStr: serviceUidStr,
+    );
 
-    String trainIdentityStr = '';
-    for (int i = 0; i < headcodeCandidates.length; i++) {
-      final candidate = headcodeCandidates[i];
-      final str = asString(candidate);
-      if (str != null && str.isNotEmpty) {
-        debugPrint('[ServiceDetail.fromJson] Candidate [$i] value: "$str"');
-        if (!str.startsWith('gb-nr:') && !str.contains(':') && str != serviceUidStr) {
-          trainIdentityStr = str;
-          debugPrint('[ServiceDetail.fromJson] -> ACCEPTED Candidate [$i] as trainIdentity (Head Code): "$trainIdentityStr"');
-          break;
-        } else {
-          debugPrint('[ServiceDetail.fromJson] -> REJECTED Candidate [$i] ("$str") because it looks like a Service UID');
-        }
-      }
-    }
-
-    if (trainIdentityStr.isEmpty) {
+    if (trainIdentityStr.isNotEmpty) {
+      debugPrint('[ServiceDetail.fromJson] -> ACCEPTED trainIdentity (Head Code): "$trainIdentityStr"');
+    } else {
       debugPrint('[ServiceDetail.fromJson] No valid Head Code (trainReportingIdentity) found.');
     }
 
-    int? coachCountVal = parseCoachCount(
-      json['length'] ?? json['coaches'] ?? json['formation'] ?? json['trainLength'],
-      schedule['length'] ?? schedule['coaches'] ?? schedule['formation'] ?? schedule['coachCount'],
-      metadata['length'] ?? metadata['coaches'] ?? metadata['formation'],
+    final coachCountVal = parseCoachCountFromService(
+      json: json,
+      schedule: schedule,
+      metadata: metadata,
+      locationsList: locationsList,
     );
-
-    if (coachCountVal == null) {
-      for (final loc in locationsList) {
-        if (loc is Map<String, dynamic>) {
-          final temp = (loc['temporalData'] as Map<String, dynamic>?) ?? {};
-          final locMeta = (loc['locationMetadata'] as Map<String, dynamic>?) ?? {};
-          final found = parseCoachCount(
-            loc['length'] ?? loc['coaches'] ?? loc['formation'],
-            temp['length'] ?? temp['coaches'],
-            locMeta['length'] ?? locMeta['coaches'],
-          );
-          if (found != null) {
-            coachCountVal = found;
-            break;
-          }
-        }
-      }
-    }
 
     return ServiceDetail(
       serviceUid: serviceUidStr.isNotEmpty ? serviceUidStr : 'UNKNOWN',
