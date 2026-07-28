@@ -13,7 +13,7 @@ if (keyPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "space.grbtd.traintest.GapMinder"
+    namespace = "space.grbtd.gapminder"
     compileSdk = flutter.compileSdkVersion
     // **FIXED**: Commented out the problematic ndkVersion line to allow Flutter to use the default.
     // ndkVersion = "27.0.12077973"
@@ -39,7 +39,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "space.grbtd.traintest.GapMinder"
+        applicationId = "space.grbtd.gapminder"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
