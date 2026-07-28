@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gapminder/models/departure.dart';
 import 'package:gapminder/models/service_detail.dart';
+import 'package:gapminder/helpers/text_formatter.dart';
 
 void main() {
   group('Departure.fromJson', () {
@@ -451,6 +452,31 @@ void main() {
 
       final departure = Departure.fromJson(json['service']);
       expect(departure.stockBranding, "Arterio");
+    });
+  });
+
+  group('formatOperatorStockService', () {
+    test('formats operator and rolling stock branding as Operator Brand', () {
+      expect(
+        formatOperatorStockService("South Western Railway", "Arterio"),
+        "South Western Railway Arterio",
+      );
+      expect(
+        formatOperatorStockService("LNER", "Azuma"),
+        "LNER Azuma",
+      );
+      expect(
+        formatOperatorStockService("LNER", "InterCity 225"),
+        "LNER InterCity 225",
+      );
+      expect(
+        formatOperatorStockService("Avanti West Coast", "Pendolino"),
+        "Avanti West Coast Pendolino",
+      );
+      expect(
+        formatOperatorStockService("CrossCountry", null),
+        "CrossCountry",
+      );
     });
   });
 }

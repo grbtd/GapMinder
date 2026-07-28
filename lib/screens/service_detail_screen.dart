@@ -332,22 +332,22 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         : service.locations.where((loc) => loc.serviceLocation != 'PASS').toList();
     final activeTrainIdx = _findTrainPositionIndexForLocations(displayLocations);
 
-    String article = "A";
-    if (service.atocName.isNotEmpty) {
-      String firstLetter = service.atocName.substring(0, 1).toLowerCase();
-      if (['a', 'e', 'i', 'o', 'u'].contains(firstLetter)) {
-        article = "An";
+    String serviceText = "";
+    if (service.stockBranding != null && service.stockBranding!.isNotEmpty) {
+      serviceText = "${formatOperatorStockService(service.atocName, service.stockBranding)} to ${service.destination} from ${service.origin}";
+    } else {
+      String article = "A";
+      if (service.atocName.isNotEmpty) {
+        String firstLetter = service.atocName.substring(0, 1).toLowerCase();
+        if (['a', 'e', 'i', 'o', 'u', 'l'].contains(firstLetter)) {
+          article = "An";
+        }
       }
+      serviceText = "$article ${service.atocName} service to ${service.destination} from ${service.origin}";
     }
 
-    String serviceText = "$article ${service.atocName} service to ${service.destination} from ${service.origin}";
     if (service.coachCount != null && service.coachCount! > 0) {
       serviceText += ", formed of ${service.coachCount} coaches";
-      if (service.stockBranding != null && service.stockBranding!.isNotEmpty) {
-        serviceText += " (${service.stockBranding})";
-      }
-    } else if (service.stockBranding != null && service.stockBranding!.isNotEmpty) {
-      serviceText += ", formed of ${service.stockBranding}";
     }
 
     return ListView.builder(

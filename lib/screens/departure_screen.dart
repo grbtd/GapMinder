@@ -279,11 +279,24 @@ class _DepartureScreenState extends State<DepartureScreen> {
         appBar: AppBar(
           title: Text("${widget.station.name} Departures"),
           actions: [
+            IconButton(
+              icon: Icon(
+                _prefs.isNerdMode ? Icons.psychology : Icons.psychology_outlined,
+                color: _prefs.isNerdMode ? Colors.amber : null,
+              ),
+              tooltip: _prefs.isNerdMode
+                  ? "Nerd Mode: ON (Showing operational details & PASS waypoints)"
+                  : "Nerd Mode: OFF (Showing passenger stops only)",
+              onPressed: () {
+                _prefs.toggleNerdMode();
+              },
+            ),
             if (_departures != null && _departures!.isNotEmpty)
               IconButton(
                 icon: Icon(
                   _isGroupingByPlatform ? Icons.access_time : Icons.train,
                 ),
+                tooltip: _isGroupingByPlatform ? "Group by time" : "Group by platform",
                 onPressed: () {
                   setState(() {
                     _isGroupingByPlatform = !_isGroupingByPlatform;
@@ -608,7 +621,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
                       ]
                     ] else ...[
                       Text(
-                        departure.operatorName ?? 'Unknown Operator',
+                        formatOperatorStockService(departure.operatorName, departure.stockBranding),
                         style: textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),

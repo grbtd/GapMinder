@@ -11,3 +11,15 @@ String getFormattedCancellationReason(String? reason) {
 
   return "This service was cancelled due to a $reason.";
 }
+
+String formatOperatorStockService(String? operatorName, String? stockBranding) {
+  final op = (operatorName != null && operatorName.trim().isNotEmpty)
+      ? operatorName.trim()
+      : 'Unknown Operator';
+
+  if (stockBranding == null || stockBranding.trim().isEmpty) {
+    return op;
+  }
+
+  return "$op ${stockBranding.trim()}";
+}
