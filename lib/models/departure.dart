@@ -63,7 +63,9 @@ class Departure {
     final locationDetail = (json['locationDetail'] as Map<String, dynamic>?) ??
         (json['location'] as Map<String, dynamic>?) ??
         {};
-    final metadata = (json['metadata'] as Map<String, dynamic>?) ?? {};
+    final metadata = (json['locationMetadata'] as Map<String, dynamic>?) ??
+        (json['metadata'] as Map<String, dynamic>?) ??
+        {};
     final schedule = (json['scheduleMetadata'] as Map<String, dynamic>?) ?? {};
     final temporal = (json['temporalData'] as Map<String, dynamic>?) ?? {};
 

@@ -78,6 +78,48 @@ void main() {
       expect(departure.status, "AT_PLAT");
     });
 
+    test('should detect platformChanged when locationMetadata planned and actual platforms differ', () {
+      final jsonStr = '''
+      {
+        "locationMetadata": {
+          "destination": [{"description": "Southampton Central"}],
+          "platform": {
+            "planned": "2",
+            "actual": "3"
+          }
+        },
+        "scheduleMetadata": {
+          "uniqueIdentity": "gb-nr:S12345:2026-07-28"
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final departure = Departure.fromJson(json);
+      expect(departure.platform, "3");
+      expect(departure.platformChanged, true);
+    });
+
+    test('should not mark platformChanged when locationMetadata planned and actual platforms match', () {
+      final jsonStr = '''
+      {
+        "locationMetadata": {
+          "destination": [{"description": "Southampton Central"}],
+          "platform": {
+            "planned": "2",
+            "actual": "2"
+          }
+        },
+        "scheduleMetadata": {
+          "uniqueIdentity": "gb-nr:S12345:2026-07-28"
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final departure = Departure.fromJson(json);
+      expect(departure.platform, "2");
+      expect(departure.platformChanged, false);
+    });
+
     test('should handle cancelled service displayAs', () {
       final jsonStr = '''
       {

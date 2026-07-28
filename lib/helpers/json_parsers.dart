@@ -93,9 +93,24 @@ String? parsePlatform(dynamic platformData) {
 }
 
 bool parsePlatformChanged(dynamic platformData, dynamic platformChangedFallback) {
-  if (platformChangedFallback is bool) return platformChangedFallback;
+  if (platformChangedFallback == true ||
+      platformChangedFallback == 'true' ||
+      platformChangedFallback == '1' ||
+      platformChangedFallback == 1) {
+    return true;
+  }
   if (platformData is Map) {
-    if (platformData['changed'] is bool) return platformData['changed'] as bool;
+    final changedVal = platformData['changed'];
+    if (changedVal == true || changedVal == 'true' || changedVal == '1' || changedVal == 1) {
+      return true;
+    }
+    final planned = platformData['planned']?.toString().trim().toLowerCase();
+    final actual = platformData['actual']?.toString().trim().toLowerCase();
+    if (planned != null && planned.isNotEmpty &&
+        actual != null && actual.isNotEmpty &&
+        planned != actual) {
+      return true;
+    }
   }
   return false;
 }

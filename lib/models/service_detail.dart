@@ -117,6 +117,7 @@ class CallingPoint {
   final String? gbttBookedDeparture;
   final String? realtimeDeparture;
   final String? platform;
+  final bool platformChanged;
   final String? serviceLocation;
   final int departureLateness;
   final bool hasActualReport;
@@ -130,6 +131,7 @@ class CallingPoint {
     required this.gbttBookedDeparture,
     required this.realtimeDeparture,
     required this.platform,
+    this.platformChanged = false,
     required this.serviceLocation,
     required this.departureLateness,
     this.hasActualReport = false,
@@ -159,6 +161,10 @@ class CallingPoint {
 
     final platformRaw = locationMetadata['platform'] ?? json['platform'] ?? locationDetail['platform'];
     final platformStr = parsePlatform(platformRaw);
+    final platformChanged = parsePlatformChanged(
+      platformRaw,
+      locationDetail['platformChanged'] ?? locationMetadata['platform']?['changed'] ?? json['platformChanged'],
+    );
 
     final locationDesc = parseLocationDescription(geo.isNotEmpty ? geo : json['description'] ?? json['locationName'] ?? json['name']);
 
@@ -222,6 +228,7 @@ class CallingPoint {
       gbttBookedDeparture: formatToHHmm(schedDep),
       realtimeDeparture: formatToHHmm(realDep),
       platform: platformStr,
+      platformChanged: platformChanged,
       serviceLocation: isPassPoint ? 'PASS' : displayAsStr,
       departureLateness: int.tryParse(asString(lateness) ?? '0') ?? 0,
       hasActualReport: hasActual,

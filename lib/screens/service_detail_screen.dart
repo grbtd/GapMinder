@@ -9,6 +9,7 @@ import '../models/departure.dart';
 import '../models/service_detail.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
+import '../widgets/blinking_widget.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
   final Station station;
@@ -624,10 +625,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   if (location.platform != null && location.platform!.isNotEmpty)
-                    Text(
-                        "Platform: ${location.platform}",
-                        style: theme.textTheme.bodySmall?.copyWith(color: isCancelled ? Colors.grey : null)
-                    ),
+                    location.platformChanged
+                        ? BlinkingWidget(
+                            child: Text(
+                              "Platform: ${location.platform}",
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: isCancelled ? Colors.grey : Colors.orange,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            "Platform: ${location.platform}",
+                            style: theme.textTheme.bodySmall?.copyWith(color: isCancelled ? Colors.grey : null),
+                          ),
                   const SizedBox(height: 4),
                   _buildStopTimes(location, isCancelled),
                   if (formationWidget != null && !isCancelled)
