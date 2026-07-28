@@ -9,6 +9,7 @@ import '../models/departure.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
+import '../widgets/settings_dialog.dart';
 import 'service_detail_screen.dart';
 
 class DepartureScreen extends StatefulWidget {
@@ -280,30 +281,6 @@ class _DepartureScreenState extends State<DepartureScreen> {
         appBar: AppBar(
           title: Text("${widget.station.name} Departures"),
           actions: [
-            IconButton(
-              icon: Icon(
-                _prefs.showArrivals ? Icons.flight_land : Icons.flight_land_outlined,
-                color: _prefs.showArrivals ? Colors.teal : null,
-              ),
-              tooltip: _prefs.showArrivals
-                  ? "Terminating Arrivals: SHOWN (Click to hide)"
-                  : "Terminating Arrivals: HIDDEN (Click to show)",
-              onPressed: () {
-                _prefs.toggleShowArrivals();
-              },
-            ),
-            IconButton(
-              icon: Icon(
-                _prefs.isNerdMode ? Icons.psychology : Icons.psychology_outlined,
-                color: _prefs.isNerdMode ? Colors.amber : null,
-              ),
-              tooltip: _prefs.isNerdMode
-                  ? "Nerd Mode: ON (Showing operational details & PASS waypoints)"
-                  : "Nerd Mode: OFF (Showing passenger stops only)",
-              onPressed: () {
-                _prefs.toggleNerdMode();
-              },
-            ),
             if (_departures != null && _departures!.isNotEmpty)
               IconButton(
                 icon: Icon(
@@ -316,6 +293,11 @@ class _DepartureScreenState extends State<DepartureScreen> {
                   });
                 },
               ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () => showSettingsDialog(context),
+            ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: CountdownTimer(

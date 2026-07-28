@@ -10,6 +10,7 @@ import '../models/service_detail.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
 import '../widgets/blinking_widget.dart';
+import '../widgets/settings_dialog.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
   final Station station;
@@ -276,16 +277,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           title: titleWidget,
           actions: [
             IconButton(
-              icon: Icon(
-                _prefs.isNerdMode ? Icons.psychology : Icons.psychology_outlined,
-                color: _prefs.isNerdMode ? Colors.amber : null,
-              ),
-              tooltip: _prefs.isNerdMode
-                  ? "Nerd Mode: ON (Showing operational details & PASS waypoints)"
-                  : "Nerd Mode: OFF (Showing passenger stops only)",
-              onPressed: () {
-                _prefs.toggleNerdMode();
-              },
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () => showSettingsDialog(context),
             ),
             if (widget.departure.status != 'CANCELLED')
               Padding(

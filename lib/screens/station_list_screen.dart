@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import '../models/station.dart';
+import '../widgets/settings_dialog.dart';
 import 'departure_screen.dart';
 
 class StationListScreen extends StatefulWidget {
@@ -204,6 +205,11 @@ class _StationListScreenState extends State<StationListScreen> {
           icon: const Icon(Icons.refresh),
           onPressed: _findNearbyStations,
           tooltip: 'Refresh Nearby Stations',
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: () => showSettingsDialog(context),
+          tooltip: 'Settings',
         ),
       ],
     );
