@@ -9,6 +9,7 @@ import '../models/departure.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
+import '../widgets/rate_limit_card.dart';
 import '../widgets/settings_dialog.dart';
 import 'service_detail_screen.dart';
 
@@ -157,6 +158,13 @@ class _DepartureScreenState extends State<DepartureScreen> {
         _isLoading = false;
         _loadingStatus = null;
         _error = null;
+      });
+    } on RateLimitException catch (_) {
+      if (!mounted) return;
+      _countdownKey.currentState?.stop();
+      setState(() {
+        _isLoading = false;
+        _loadingStatus = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -352,6 +360,21 @@ class _DepartureScreenState extends State<DepartureScreen> {
       }
       return true;
     }).toList();
+
+    if (_apiService.isRateLimited) {
+      return Column(
+        children: [
+          RateLimitCard(
+            resetTime: _apiService.rateLimitResetTime!,
+            onRetry: () => _loadDepartures(isRefresh: true, forceRefresh: true),
+          ),
+          if (displayDepartures.isNotEmpty)
+            Expanded(
+              child: _isGroupingByPlatform ? _buildGroupedView(displayDepartures) : _buildListView(displayDepartures),
+            ),
+        ],
+      );
+    }
 
     if (displayDepartures.isEmpty) {
       return const Center(child: Text("No services found for current filters."));

@@ -15,6 +15,21 @@ class _UnauthorizedException implements Exception {
   String toString() => message;
 }
 
+class RateLimitException implements Exception {
+  final String message;
+  final int retryAfterSeconds;
+  final DateTime retryAfterTime;
+
+  RateLimitException({
+    required this.message,
+    required this.retryAfterSeconds,
+    required this.retryAfterTime,
+  });
+
+  @override
+  String toString() => message;
+}
+
 class RealtimeTrainsService {
   static RealtimeTrainsService? _instance;
 
@@ -25,6 +40,58 @@ class RealtimeTrainsService {
   String? _cachedAccessToken;
   DateTime? _tokenExpiry;
   bool _isInitialized = false;
+
+  DateTime? _rateLimitResetTime;
+  final ValueNotifier<DateTime?> rateLimitResetNotifier = ValueNotifier<DateTime?>(null);
+
+  bool get isRateLimited {
+    if (_rateLimitResetTime == null) return false;
+    if (DateTime.now().isAfter(_rateLimitResetTime!)) {
+      _rateLimitResetTime = null;
+      rateLimitResetNotifier.value = null;
+      return false;
+    }
+    return true;
+  }
+
+  int get rateLimitRemainingSeconds {
+    if (!isRateLimited || _rateLimitResetTime == null) return 0;
+    final diff = _rateLimitResetTime!.difference(DateTime.now()).inSeconds;
+    return diff > 0 ? diff : 0;
+  }
+
+  DateTime? get rateLimitResetTime => isRateLimited ? _rateLimitResetTime : null;
+
+  int _parseRetryAfterHeader(http.Response response, {int defaultSeconds = 60}) {
+    String? headerValue;
+    response.headers.forEach((key, value) {
+      if (key.toLowerCase() == 'retry-after') {
+        headerValue = value;
+      }
+    });
+
+    if (headerValue != null && headerValue!.trim().isNotEmpty) {
+      final seconds = int.tryParse(headerValue!.trim());
+      if (seconds != null && seconds > 0) {
+        return seconds;
+      }
+      try {
+        final dateTime = DateTime.tryParse(headerValue!.trim());
+        if (dateTime != null) {
+          final diff = dateTime.difference(DateTime.now()).inSeconds;
+          if (diff > 0) return diff;
+        }
+      } catch (_) {}
+    }
+    return defaultSeconds;
+  }
+
+  void _handleRateLimit(http.Response response) {
+    final seconds = _parseRetryAfterHeader(response);
+    _rateLimitResetTime = DateTime.now().add(Duration(seconds: seconds));
+    rateLimitResetNotifier.value = _rateLimitResetTime;
+    debugPrint('[RealtimeTrainsService] Rate limited (429)! Resuming in $seconds seconds at $_rateLimitResetTime');
+  }
 
   final Map<String, ServiceDetail> _serviceCache = {};
   final Map<String, DateTime> _serviceCacheTime = {};
@@ -111,6 +178,8 @@ class RealtimeTrainsService {
 
           return accessToken;
         }
+      } else if (response.statusCode == 429) {
+        _handleRateLimit(response);
       }
     } catch (_) {}
 
@@ -222,6 +291,13 @@ class RealtimeTrainsService {
         return services
             .map((json) => Departure.fromJson(json as Map<String, dynamic>))
             .toList();
+      } else if (response.statusCode == 429) {
+        _handleRateLimit(response);
+        throw RateLimitException(
+          message: 'Rate limit reached (429). Retry in ${rateLimitRemainingSeconds}s.',
+          retryAfterSeconds: rateLimitRemainingSeconds,
+          retryAfterTime: _rateLimitResetTime!,
+        );
       } else if (response.statusCode == 401) {
         String detail = 'Invalid or expired token';
         try {
@@ -241,6 +317,14 @@ class RealtimeTrainsService {
     DateTime? pivotTime,
     void Function(String statusMessage)? onProgress,
   }) async {
+    if (isRateLimited) {
+      debugPrint('[RealtimeTrainsService] Blocked fetchDepartures due to active rate limit until $_rateLimitResetTime');
+      throw RateLimitException(
+        message: 'Rate limit reached (429). Retry in ${rateLimitRemainingSeconds}s.',
+        retryAfterSeconds: rateLimitRemainingSeconds,
+        retryAfterTime: _rateLimitResetTime!,
+      );
+    }
     onProgress?.call('Fetching departure board...');
     final cleanCrs = crsCode.trim().toUpperCase();
     final referenceTime = pivotTime ?? DateTime.now();
@@ -403,6 +487,14 @@ class RealtimeTrainsService {
     bool detailed = true,
     bool forceRefresh = false,
   }) async {
+    if (isRateLimited) {
+      debugPrint('[RealtimeTrainsService] Blocked fetchServiceDetails due to active rate limit until $_rateLimitResetTime');
+      throw RateLimitException(
+        message: 'Rate limit reached (429). Retry in ${rateLimitRemainingSeconds}s.',
+        retryAfterSeconds: rateLimitRemainingSeconds,
+        retryAfterTime: _rateLimitResetTime!,
+      );
+    }
     final parsed = _parseServiceIdAndDate(serviceUid, runDate);
     final uid = parsed['uid']!;
     final date = parsed['date']!;
@@ -443,6 +535,13 @@ class RealtimeTrainsService {
             _serviceCache[cacheKey] = detail;
             _serviceCacheTime[cacheKey] = DateTime.now();
             return detail;
+          } else if (response.statusCode == 429) {
+            _handleRateLimit(response);
+            throw RateLimitException(
+              message: 'Rate limit reached (429). Retry in ${rateLimitRemainingSeconds}s.',
+              retryAfterSeconds: rateLimitRemainingSeconds,
+              retryAfterTime: _rateLimitResetTime!,
+            );
           } else if (response.statusCode == 401) {
             String detail = 'Invalid or expired token';
             try {

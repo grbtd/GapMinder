@@ -1,8 +1,13 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:gapminder/api/realtime_trains_service.dart';
 import 'package:gapminder/models/departure.dart';
+import 'package:gapminder/models/secrets.dart';
 import 'package:gapminder/models/service_detail.dart';
 import 'package:gapminder/helpers/text_formatter.dart';
+import 'realtime_trains_service_test.dart';
 
 void main() {
   group('Departure.fromJson', () {
@@ -496,6 +501,28 @@ void main() {
       final departure = Departure.fromJson(jsonDecode(jsonStr));
       expect(departure.isTerminating, true);
       expect(departure.origin, "Reading");
+    });
+
+    test('handles HTTP 429 and Retry-After rate limits correctly', () async {
+      final mockClient = MockClient((request) async {
+        return http.Response('Too Many Requests', 429, headers: {'retry-after': '45'});
+      });
+
+      final service = RealtimeTrainsService(
+        client: mockClient,
+        secretsLoader: () async => Secrets(token: 'dummy_token'),
+      );
+
+      expect(service.isRateLimited, false);
+
+      await expectLater(
+        service.fetchDepartures('WAT', forceRefresh: true),
+        throwsA(isA<RateLimitException>()),
+      );
+
+      expect(service.isRateLimited, true);
+      expect(service.rateLimitRemainingSeconds > 0, true);
+      expect(service.rateLimitResetTime != null, true);
     });
   });
 }

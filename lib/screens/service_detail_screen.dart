@@ -10,6 +10,7 @@ import '../models/service_detail.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
 import '../widgets/blinking_widget.dart';
+import '../widgets/rate_limit_card.dart';
 import '../widgets/settings_dialog.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
@@ -136,6 +137,12 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         });
       }
 
+    } on RateLimitException catch (_) {
+      if (!mounted) return;
+      _countdownKey.currentState?.stop();
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       if (!isRefresh || _serviceDetail == null) {
@@ -307,6 +314,19 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           padding: const EdgeInsets.all(16.0),
           child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ),
+      );
+    }
+
+    if (_apiService.isRateLimited) {
+      return Column(
+        children: [
+          RateLimitCard(
+            resetTime: _apiService.rateLimitResetTime!,
+            onRetry: () => _fetchServiceDetails(isRefresh: true),
+          ),
+          if (_serviceDetail != null)
+            Expanded(child: _buildServiceDetailView(_serviceDetail!)),
+        ],
       );
     }
 
