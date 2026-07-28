@@ -337,6 +337,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     String serviceText = "$article ${service.atocName} service to ${service.destination} from ${service.origin}";
     if (service.coachCount != null && service.coachCount! > 0) {
       serviceText += ", formed of ${service.coachCount} coaches";
+      if (service.stockBranding != null && service.stockBranding!.isNotEmpty) {
+        serviceText += " (${service.stockBranding})";
+      }
+    } else if (service.stockBranding != null && service.stockBranding!.isNotEmpty) {
+      serviceText += ", formed of ${service.stockBranding}";
     }
 
     return ListView.builder(

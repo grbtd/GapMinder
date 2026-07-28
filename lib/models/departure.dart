@@ -13,6 +13,8 @@ class Departure {
   final String? serviceType; // Nullable
   final String? cancelReasonShortText; // Nullable
   final String? cancelReasonLongText; // Nullable
+  final int? coachCount;
+  final String? stockBranding;
 
   Departure({
     required this.serviceUid,
@@ -27,6 +29,8 @@ class Departure {
     required this.serviceType,
     this.cancelReasonShortText,
     this.cancelReasonLongText,
+    this.coachCount,
+    this.stockBranding,
   });
 
   Departure copyWith({
@@ -42,6 +46,8 @@ class Departure {
     String? serviceType,
     String? cancelReasonShortText,
     String? cancelReasonLongText,
+    int? coachCount,
+    String? stockBranding,
   }) {
     return Departure(
       serviceUid: serviceUid ?? this.serviceUid,
@@ -56,6 +62,8 @@ class Departure {
       serviceType: serviceType ?? this.serviceType,
       cancelReasonShortText: cancelReasonShortText ?? this.cancelReasonShortText,
       cancelReasonLongText: cancelReasonLongText ?? this.cancelReasonLongText,
+      coachCount: coachCount ?? this.coachCount,
+      stockBranding: stockBranding ?? this.stockBranding,
     );
   }
 
@@ -197,6 +205,17 @@ class Departure {
         locationDetail['cancelReasonLongText'] ??
         metadata['cancelReasonLongText'] ??
         json['cancelReasonLongText'],
+      ),
+      coachCount: parseCoachCount(
+        json['numberOfVehicles'] ?? json['length'] ?? json['coaches'] ?? json['formation'],
+        metadata['numberOfVehicles'] ?? metadata['length'] ?? metadata['coaches'],
+        locationDetail['numberOfVehicles'] ?? locationDetail['length'] ?? locationDetail['coaches'],
+      ),
+      stockBranding: parseStockBranding(
+        locationDetail['stockBranding'] ?? locationDetail['stock'] ?? locationDetail['formation'],
+        metadata['stockBranding'] ?? metadata['stock'] ?? metadata['formation'],
+        json['stockBranding'] ?? json['stock'] ?? json['formation'],
+        schedule['stockBranding'] ?? schedule['stock'] ?? schedule['formation'],
       ),
     );
   }

@@ -378,6 +378,8 @@ class RealtimeTrainsService {
             scheduledTime: stop?.gbttBookedDeparture ?? stop?.gbttBookedArrival ?? dep.scheduledTime,
             realtimeTime: stop?.realtimeDeparture ?? stop?.realtimeArrival ?? dep.realtimeTime,
             status: updatedStatus,
+            coachCount: detail.coachCount ?? stop?.coachCount ?? dep.coachCount,
+            stockBranding: detail.stockBranding ?? stop?.stockBranding ?? dep.stockBranding,
           );
         } catch (_) {
           return dep;

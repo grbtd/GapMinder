@@ -228,3 +228,62 @@ int? parseCoachCountFromService({
   return coachCount;
 }
 
+String? parseStockBranding(dynamic rawData, [dynamic secondaryData, dynamic tertiaryData, dynamic quaternaryData]) {
+  for (final data in [rawData, secondaryData, tertiaryData, quaternaryData]) {
+    if (data == null) continue;
+    if (data is String && data.trim().isNotEmpty) {
+      return data.trim();
+    }
+    if (data is Map) {
+      final branding = data['stockBranding'] ??
+          data['branding'] ??
+          data['stock']?['stockBranding'] ??
+          data['stock']?['branding'] ??
+          data['stock']?['name'] ??
+          data['formation']?['stockBranding'] ??
+          data['formation']?['branding'];
+      if (branding != null && branding.toString().trim().isNotEmpty) {
+        return branding.toString().trim();
+      }
+    }
+  }
+  return null;
+}
+
+String? parseStockBrandingFromService({
+  required Map<String, dynamic> json,
+  required Map<String, dynamic> schedule,
+  required Map<String, dynamic> metadata,
+  required Map<String, dynamic> serviceMetadata,
+  required List<dynamic> locationsList,
+}) {
+  String? branding = parseStockBranding(
+    json['stockBranding'] ?? json['stock'] ?? json['formation'],
+    schedule['stockBranding'] ?? schedule['stock'] ?? schedule['formation'],
+    metadata['stockBranding'] ?? metadata['stock'] ?? metadata['formation'],
+    serviceMetadata['stockBranding'] ?? serviceMetadata['stock'] ?? serviceMetadata['formation'],
+  );
+
+  if (branding == null) {
+    for (final loc in locationsList) {
+      if (loc is Map<String, dynamic>) {
+        final temp = (loc['temporalData'] as Map<String, dynamic>?) ?? {};
+        final locMeta = (loc['locationMetadata'] as Map<String, dynamic>?) ?? {};
+        final locDetail = (loc['locationDetail'] as Map<String, dynamic>?) ?? {};
+        final geo = (loc['location'] as Map<String, dynamic>?) ?? {};
+        final found = parseStockBranding(
+          loc['stockBranding'] ?? loc['stock'] ?? loc['formation'],
+          temp['stockBranding'] ?? temp['stock'] ?? temp['formation'],
+          locMeta['stockBranding'] ?? locMeta['stock'] ?? locMeta['formation'],
+          locDetail['stockBranding'] ?? locDetail['stock'] ?? locDetail['formation'] ?? geo['stockBranding'],
+        );
+        if (found != null) {
+          branding = found;
+          break;
+        }
+      }
+    }
+  }
+  return branding;
+}
+

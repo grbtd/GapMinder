@@ -11,6 +11,7 @@ class ServiceDetail {
   final String destination;
   final List<CallingPoint> locations;
   final int? coachCount;
+  final String? stockBranding;
 
   ServiceDetail({
     required this.serviceUid,
@@ -22,6 +23,7 @@ class ServiceDetail {
     required this.destination,
     required this.locations,
     this.coachCount,
+    this.stockBranding,
   });
 
   factory ServiceDetail.fromJson(Map<String, dynamic> rawJson) {
@@ -95,6 +97,16 @@ class ServiceDetail {
         ? locations.firstWhere((l) => l.coachCount != null, orElse: () => locations.first).coachCount
         : null);
 
+    final stockBrandingVal = parseStockBrandingFromService(
+      json: json,
+      schedule: schedule,
+      metadata: metadata,
+      serviceMetadata: serviceMetadata,
+      locationsList: locationsList,
+    ) ?? (locations.isNotEmpty
+        ? locations.firstWhere((l) => l.stockBranding != null && l.stockBranding!.isNotEmpty, orElse: () => locations.first).stockBranding
+        : null);
+
     return ServiceDetail(
       serviceUid: serviceUidStr.isNotEmpty ? serviceUidStr : 'UNKNOWN',
       runDate: asString(schedule['departureDate'] ?? json['runDate'] ?? json['date']),
@@ -105,6 +117,7 @@ class ServiceDetail {
       destination: destinationStr,
       locations: locations,
       coachCount: coachCountVal,
+      stockBranding: stockBrandingVal,
     );
   }
 }
@@ -122,6 +135,7 @@ class CallingPoint {
   final int departureLateness;
   final bool hasActualReport;
   final int? coachCount;
+  final String? stockBranding;
 
   CallingPoint({
     required this.locationName,
@@ -136,6 +150,7 @@ class CallingPoint {
     required this.departureLateness,
     this.hasActualReport = false,
     this.coachCount,
+    this.stockBranding,
   });
 
   factory CallingPoint.fromJson(Map<String, dynamic> json) {
@@ -220,6 +235,13 @@ class CallingPoint {
       locationDetail['numberOfVehicles'] ?? temporal['numberOfVehicles'] ?? geo['numberOfVehicles'],
     );
 
+    final callingPointStockBranding = parseStockBranding(
+      json['stockBranding'] ?? json['stock'] ?? json['formation'],
+      locationMetadata['stockBranding'] ?? locationMetadata['stock'] ?? locationMetadata['formation'],
+      locationDetail['stockBranding'] ?? locationDetail['stock'] ?? locationDetail['formation'],
+      temporal['stockBranding'] ?? temporal['stock'] ?? temporal['formation'],
+    );
+
     return CallingPoint(
       locationName: locationDesc != 'Unknown' ? locationDesc : null,
       crs: crsCode,
@@ -233,6 +255,7 @@ class CallingPoint {
       departureLateness: int.tryParse(asString(lateness) ?? '0') ?? 0,
       hasActualReport: hasActual,
       coachCount: callingPointCoachCount,
+      stockBranding: callingPointStockBranding,
     );
   }
 }

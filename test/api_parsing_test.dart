@@ -398,6 +398,37 @@ void main() {
       expect(detail.locations[0].coachCount, 8);
       expect(detail.locations[1].coachCount, 4);
     });
+
+    test('should parse stockBranding on ServiceDetail, CallingPoints, and Departure', () {
+      final jsonStr = '''
+      {
+        "service": {
+          "serviceUid": "W12345",
+          "runDate": "2026-07-27",
+          "stockBranding": "Arterio",
+          "locations": [
+            {
+              "crs": "WAT",
+              "description": "London Waterloo",
+              "numberOfVehicles": 10,
+              "allocationIndex": 0,
+              "locationMetadata": {
+                "stockBranding": "Arterio"
+              }
+            }
+          ]
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final detail = ServiceDetail.fromJson(json);
+
+      expect(detail.stockBranding, "Arterio");
+      expect(detail.locations[0].stockBranding, "Arterio");
+
+      final departure = Departure.fromJson(json['service']);
+      expect(departure.stockBranding, "Arterio");
+    });
   });
 }
 
