@@ -266,6 +266,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "APPR_STAT":
       case "APPR_PLAT":
       case "APPROACHING": return isGrouped ? "APPR" : "APPROACHING";
+      case "TERMINATES": return isGrouped ? "TERM" : "TERMINATES";
       default:
         return status;
     }
@@ -279,6 +280,18 @@ class _DepartureScreenState extends State<DepartureScreen> {
         appBar: AppBar(
           title: Text("${widget.station.name} Departures"),
           actions: [
+            IconButton(
+              icon: Icon(
+                _prefs.showArrivals ? Icons.flight_land : Icons.flight_land_outlined,
+                color: _prefs.showArrivals ? Colors.teal : null,
+              ),
+              tooltip: _prefs.showArrivals
+                  ? "Terminating Arrivals: SHOWN (Click to hide)"
+                  : "Terminating Arrivals: HIDDEN (Click to show)",
+              onPressed: () {
+                _prefs.toggleShowArrivals();
+              },
+            ),
             IconButton(
               icon: Icon(
                 _prefs.isNerdMode ? Icons.psychology : Icons.psychology_outlined,
@@ -351,15 +364,22 @@ class _DepartureScreenState extends State<DepartureScreen> {
       );
     }
 
-    if (_departures == null || _departures!.isEmpty) {
-      return const Center(child: Text("No departures found."));
+    final displayDepartures = (_departures ?? []).where((dep) {
+      if (!_prefs.showArrivals && dep.isTerminating) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (displayDepartures.isEmpty) {
+      return const Center(child: Text("No services found for current filters."));
     }
 
-    return _isGroupingByPlatform ? _buildGroupedView() : _buildListView();
+    return _isGroupingByPlatform ? _buildGroupedView(displayDepartures) : _buildListView(displayDepartures);
   }
 
-  Widget _buildListView() {
-    final departuresCount = _departures?.length ?? 0;
+  Widget _buildListView(List<Departure> displayDepartures) {
+    final departuresCount = displayDepartures.length;
     final itemCount = departuresCount + 2;
 
     return LayoutBuilder(builder: (context, constraints) {
@@ -379,7 +399,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
                 ),
                 itemCount: departuresCount,
                 itemBuilder: (context, index) {
-                  return _buildDepartureCard(_departures![index]);
+                  return _buildDepartureCard(displayDepartures[index]);
                 },
               ),
             ),
@@ -401,14 +421,20 @@ class _DepartureScreenState extends State<DepartureScreen> {
             if (index == itemCount - 1) {
               return _buildTimeJumpButton(isTop: false);
             }
-            return _buildDepartureCard(_departures![index - 1]);
+            return _buildDepartureCard(displayDepartures[index - 1]);
           },
         );
       }
     });
   }
 
-  Widget _buildGroupedView() {
+  Widget _buildGroupedView(List<Departure> displayDepartures) {
+    Map<String, List<Departure>> displayGrouped = {};
+    for (var dep in displayDepartures) {
+      final platformKey = (dep.platform?.isNotEmpty ?? false) ? dep.platform! : "TBC";
+      displayGrouped.putIfAbsent(platformKey, () => []).add(dep);
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         bool isWide = constraints.maxWidth > 600;
@@ -424,7 +450,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
                 Wrap(
                   spacing: 16.0,
                   runSpacing: 16.0,
-                  children: _groupedDepartures.entries.map((entry) {
+                  children: displayGrouped.entries.map((entry) {
                     return _buildPlatformColumn(entry.key, entry.value, isWide: true);
                   }).toList(),
                 ),
@@ -439,7 +465,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
             children: [
               if (_pivotTime != null) _buildPivotTimeBanner(),
               _buildTimeJumpButton(isTop: true),
-              ..._groupedDepartures.entries.map((entry) {
+              ...displayGrouped.entries.map((entry) {
                 return _buildPlatformColumn(entry.key, entry.value, isWide: false);
               }),
               _buildTimeJumpButton(isTop: false),
@@ -625,9 +651,18 @@ class _DepartureScreenState extends State<DepartureScreen> {
                         style: textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (!isGrouped && departure.status != null && departure.status!.isNotEmpty) ...[
+                      if (departure.isTerminating || (departure.status != null && departure.status!.isNotEmpty)) ...[
                         const SizedBox(height: 4),
-                        _buildStatusTag(departure.status!, isGrouped: isGrouped),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: [
+                            if (departure.isTerminating)
+                              _buildStatusTag("TERMINATES", isGrouped: isGrouped),
+                            if (departure.status != null && departure.status!.isNotEmpty)
+                              _buildStatusTag(departure.status!, isGrouped: isGrouped),
+                          ],
+                        ),
                       ],
                     ]
                   ],
@@ -652,7 +687,6 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "ON TIME":
       case "CALL":
       case "STARTS":
-      case "TERMINATES":
       case "PASS":
         return const SizedBox.shrink();
       case "CANCELLED":
@@ -666,6 +700,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "APPR_PLAT":
       case "APPROACHING":
         tagColor = Colors.orange;
+        break;
+      case "TERMINATES":
+        tagColor = Colors.purple;
         break;
       default:
         return const SizedBox.shrink();

@@ -478,6 +478,25 @@ void main() {
         "CrossCountry",
       );
     });
+
+    test('parses isTerminating and origin correctly for terminating services', () {
+      final jsonStr = '''
+      {
+        "locationDetail": {
+          "displayAs": "TERMINATES",
+          "origin": [{"description": "Reading"}],
+          "destination": [{"description": "London Waterloo"}],
+          "gbttBookedArrival": "14:45"
+        },
+        "scheduleMetadata": {
+          "uniqueIdentity": "gb-nr:W99999:2026-07-28"
+        }
+      }
+      ''';
+      final departure = Departure.fromJson(jsonDecode(jsonStr));
+      expect(departure.isTerminating, true);
+      expect(departure.origin, "Reading");
+    });
   });
 }
 

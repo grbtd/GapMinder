@@ -384,6 +384,7 @@ class RealtimeTrainsService {
             status: updatedStatus,
             coachCount: detail.coachCount ?? stop?.coachCount ?? dep.coachCount,
             stockBranding: detail.stockBranding ?? stop?.stockBranding ?? dep.stockBranding,
+            origin: (detail.origin != 'Unknown Origin' && detail.origin != 'Unknown Location') ? detail.origin : dep.origin,
           );
         } catch (_) {
           return dep;

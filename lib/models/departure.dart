@@ -8,6 +8,8 @@ class Departure {
   final String? platform; // Nullable
   final String? operatorName; // Nullable
   final String destination;
+  final String? origin;
+  final bool isTerminating;
   final bool platformChanged;
   final String? status; // Nullable
   final String? serviceType; // Nullable
@@ -24,6 +26,8 @@ class Departure {
     required this.platform,
     required this.operatorName,
     required this.destination,
+    this.origin,
+    this.isTerminating = false,
     required this.platformChanged,
     required this.status,
     required this.serviceType,
@@ -41,6 +45,8 @@ class Departure {
     String? platform,
     String? operatorName,
     String? destination,
+    String? origin,
+    bool? isTerminating,
     bool? platformChanged,
     String? status,
     String? serviceType,
@@ -57,6 +63,8 @@ class Departure {
       platform: platform ?? this.platform,
       operatorName: operatorName ?? this.operatorName,
       destination: destination ?? this.destination,
+      origin: origin ?? this.origin,
+      isTerminating: isTerminating ?? this.isTerminating,
       platformChanged: platformChanged ?? this.platformChanged,
       status: status ?? this.status,
       serviceType: serviceType ?? this.serviceType,
@@ -87,6 +95,17 @@ class Departure {
         json['destinationLocation'];
 
     final destinationStr = parseLocationDescription(destinationsData);
+
+    final originsData = locationDetail['origin'] ??
+        metadata['origin'] ??
+        json['origin'] ??
+        schedule['origin'] ??
+        locationDetail['origins'] ??
+        metadata['origins'] ??
+        json['origins'] ??
+        json['originLocation'];
+
+    final originStr = parseLocationDescription(originsData);
 
     final operatorData = schedule['operator'] ??
         json['operator'] ??
@@ -187,6 +206,36 @@ class Departure {
       locationDetail['platformChanged'] ?? metadata['platform']?['changed'] ?? json['platformChanged'],
     );
 
+    final displayAsStr = asString(
+      locationDetail['displayAs'] ??
+      metadata['displayAs'] ??
+      json['displayAs'] ??
+      temporal['displayAs']
+    )?.toUpperCase();
+
+    final locationTypeStr = asString(
+      locationDetail['locationType'] ??
+      metadata['locationType'] ??
+      json['locationType']
+    )?.toUpperCase();
+
+    final bool hasNoDepartureTime = (dep is Map && (dep['scheduled'] == null && dep['realtimeForecast'] == null && dep['realtimeActual'] == null)) &&
+        locationDetail['gbttBookedDeparture'] == null &&
+        json['gbttBookedDeparture'] == null;
+
+    final bool hasArrivalTime = (arr is Map && (arr['scheduled'] != null || arr['realtimeForecast'] != null || arr['realtimeActual'] != null)) ||
+        locationDetail['gbttBookedArrival'] != null ||
+        json['gbttBookedArrival'] != null;
+
+    final bool isTerminating = displayAsStr == 'DESTINATION' ||
+        displayAsStr == 'TERMINATES' ||
+        displayAsStr == 'ARRIVES' ||
+        displayAsStr == 'ARRIVING' ||
+        locationTypeStr == 'DESTINATION' ||
+        locationTypeStr == 'TERMINATES' ||
+        destinationStr == 'Terminating' ||
+        (hasNoDepartureTime && hasArrivalTime);
+
     return Departure(
       serviceUid: serviceUidStr,
       runDate: runDateStr,
@@ -195,6 +244,8 @@ class Departure {
       platform: platformStr,
       operatorName: operatorNameStr,
       destination: destinationStr,
+      origin: originStr != 'Unknown' ? originStr : null,
+      isTerminating: isTerminating,
       platformChanged: platformChanged,
       status: getStatus(),
       serviceType: asString(
