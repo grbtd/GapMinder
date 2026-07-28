@@ -17,7 +17,7 @@ if (keyPropertiesFile.exists()) {
 
 android {
     namespace = "space.grbtd.gapminder"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -43,6 +43,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Resolve Gradle variant ambiguity for firebase_app_distribution
+        missingDimensionStrategy("default", "production")
     }
 
     buildTypes {

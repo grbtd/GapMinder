@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../helpers/preferences_service.dart';
+import 'feedback_dialog.dart';
 
 void showSettingsDialog(BuildContext context) {
   final prefs = PreferencesService();
@@ -100,6 +101,34 @@ void showSettingsDialog(BuildContext context) {
                   value: prefs.showArrivals,
                   onChanged: (bool value) {
                     prefs.setShowArrivals(value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.feedback_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  title: const Text(
+                    "Send Feedback",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: const Text(
+                    "Share your thoughts, report bugs, or suggest features",
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    showFeedbackDialog(context);
                   },
                 ),
                 const SizedBox(height: 16),
