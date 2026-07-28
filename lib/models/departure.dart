@@ -118,13 +118,21 @@ class Departure {
         return 'CANCELLED';
       }
 
-      // Prioritize explicit live positioning (AT_PLAT, APPR_PLAT, APPR_STAT)
-      final serviceLocation = locationDetail['serviceLocation']?.toString() ??
+      // Prioritize explicit live positioning (AT_PLAT, AT_PLATFORM, APPR_PLAT, APPR_STAT, APPROACHING)
+      final serviceLocation = json['status']?.toString() ??
+          locationDetail['status']?.toString() ??
+          temporal['status']?.toString() ??
+          metadata['status']?.toString() ??
+          locationDetail['serviceLocation']?.toString() ??
           metadata['serviceLocation']?.toString() ??
           json['serviceLocation']?.toString();
       if (serviceLocation != null && serviceLocation.isNotEmpty) {
         final locUpper = serviceLocation.toUpperCase();
-        if (locUpper == 'AT_PLAT' || locUpper == 'APPR_PLAT' || locUpper == 'APPR_STAT') {
+        if (locUpper == 'AT_PLAT' ||
+            locUpper == 'AT_PLATFORM' ||
+            locUpper == 'APPR_PLAT' ||
+            locUpper == 'APPR_STAT' ||
+            locUpper == 'APPROACHING') {
           return locUpper;
         }
       }

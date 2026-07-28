@@ -50,6 +50,10 @@ class CountdownTimerState extends State<CountdownTimer> {
     });
   }
 
+  void stop() {
+    _timer?.cancel();
+  }
+
   @override
   void dispose() {
     _timer?.cancel();

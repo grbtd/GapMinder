@@ -78,6 +78,29 @@ void main() {
       expect(departure.status, "AT_PLAT");
     });
 
+    test('should parse status APPROACHING and AT_PLATFORM correctly from status key', () {
+      final jsonStr = '''
+      {
+        "status": "APPROACHING",
+        "scheduleMetadata": {
+          "uniqueIdentity": "gb-nr:A11111:2026-07-28"
+        }
+      }
+      ''';
+      final json = jsonDecode(jsonStr);
+      final departure = Departure.fromJson(json);
+      expect(departure.status, "APPROACHING");
+
+      final callingPointJson = jsonDecode('''
+      {
+        "status": "AT_PLATFORM",
+        "location": {"description": "Reading", "shortCodes": ["RDG"]}
+      }
+      ''');
+      final callingPoint = CallingPoint.fromJson(callingPointJson);
+      expect(callingPoint.serviceLocation, "AT_PLATFORM");
+    });
+
     test('should detect platformChanged when locationMetadata planned and actual platforms differ', () {
       final jsonStr = '''
       {

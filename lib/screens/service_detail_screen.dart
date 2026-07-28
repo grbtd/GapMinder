@@ -62,10 +62,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
   void _onPrefsChanged() {
     if (!mounted) return;
-    _fetchServiceDetails(isRefresh: true);
+    setState(() {});
   }
 
   void _handleAppResumed() {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
     if (widget.departure.status == 'CANCELLED') {
       return;
     }
@@ -81,7 +82,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         timer.cancel();
         return;
       }
-      _fetchServiceDetails(isRefresh: true);
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _fetchServiceDetails(isRefresh: true);
+      }
     });
   }
 
@@ -99,7 +102,6 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       final serviceDetail = await _apiService.fetchServiceDetails(
         widget.departure.serviceUid,
         widget.departure.runDate,
-        detailed: _prefs.isNerdMode,
         forceRefresh: isRefresh,
       );
       if (!mounted) return;
@@ -210,7 +212,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
     int explicitStatusIndex = locations.indexWhere((loc) {
       final status = (loc.serviceLocation ?? '').toUpperCase();
-      return status == 'AT_PLAT' || status == 'APPR_PLAT' || status == 'APPR_STAT';
+      return status == 'AT_PLAT' ||
+          status == 'AT_PLATFORM' ||
+          status == 'APPR_PLAT' ||
+          status == 'APPR_STAT' ||
+          status == 'APPROACHING';
     });
     if (explicitStatusIndex != -1) {
       debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Explicit platform status at index $explicitStatusIndex (${locations[explicitStatusIndex].locationName}, status: ${locations[explicitStatusIndex].serviceLocation})');
@@ -415,8 +421,10 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         final currentLocation = displayLocations[activeTrainIdx];
         final currentStatus = (currentLocation.serviceLocation ?? '').toUpperCase();
         final bool isAtOrApproachingPlatform = currentStatus == 'AT_PLAT' ||
+            currentStatus == 'AT_PLATFORM' ||
             currentStatus == 'APPR_PLAT' ||
-            currentStatus == 'APPR_STAT';
+            currentStatus == 'APPR_STAT' ||
+            currentStatus == 'APPROACHING';
         final bool hasDepartedOrigin = activeTrainIdx > 0 || currentLocation.hasActualReport;
 
         final bool isTrainInTransitHere = activeTrainIdx == locationIndex &&
@@ -504,8 +512,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
   Widget _buildTimelineStop(CallingPoint location, int index, bool isSelectedStation, bool isFinalDestination, bool isFirstStation, bool isCancelled, {Key? key}) {
     final theme = Theme.of(context);
-    final isAtPlatform = location.serviceLocation == "AT_PLAT";
-    final isApproaching = location.serviceLocation == "APPR_STAT" || location.serviceLocation == "APPR_PLAT";
+    final isAtPlatform = location.serviceLocation == "AT_PLAT" || location.serviceLocation == "AT_PLATFORM";
+    final isApproaching = location.serviceLocation == "APPR_STAT" || location.serviceLocation == "APPR_PLAT" || location.serviceLocation == "APPROACHING";
 
     bool hasDeparted = false;
     if (!isCancelled) {

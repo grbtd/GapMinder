@@ -365,7 +365,11 @@ class RealtimeTrainsService {
           String? updatedStatus = dep.status;
           if (stop?.serviceLocation != null) {
             final locUpper = stop!.serviceLocation!.toUpperCase();
-            if (locUpper == 'AT_PLAT' || locUpper == 'APPR_PLAT' || locUpper == 'APPR_STAT') {
+            if (locUpper == 'AT_PLAT' ||
+                locUpper == 'AT_PLATFORM' ||
+                locUpper == 'APPR_PLAT' ||
+                locUpper == 'APPR_STAT' ||
+                locUpper == 'APPROACHING') {
               updatedStatus = locUpper;
             }
           }
@@ -395,14 +399,14 @@ class RealtimeTrainsService {
   Future<ServiceDetail> fetchServiceDetails(
     String serviceUid,
     String runDate, {
-    bool detailed = false,
+    bool detailed = true,
     bool forceRefresh = false,
   }) async {
     final parsed = _parseServiceIdAndDate(serviceUid, runDate);
     final uid = parsed['uid']!;
     final date = parsed['date']!;
     final identity = serviceUid.startsWith('gb-nr:') ? serviceUid : 'gb-nr:$uid:$date';
-    final cacheKey = '$identity:${detailed ? 'detailed' : 'summary'}';
+    final cacheKey = identity;
 
     if (!forceRefresh && _serviceCache.containsKey(cacheKey)) {
       final cacheTime = _serviceCacheTime[cacheKey];
@@ -414,17 +418,12 @@ class RealtimeTrainsService {
     final cleanIdentity = '$uid:$date';
     final fullIdentity = 'gb-nr:$cleanIdentity';
 
-    final candidateUrls = detailed
-        ? <Uri>[
-            Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$cleanIdentity&detailed=true'),
-            Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$fullIdentity&detailed=true'),
-            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$fullIdentity&detailed=true'),
-            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$cleanIdentity&detailed=true'),
-          ]
-        : <Uri>[
-            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$fullIdentity&detailed=false'),
-            Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$cleanIdentity&detailed=false'),
-          ];
+    final candidateUrls = <Uri>[
+      Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$fullIdentity&detailed=true'),
+      Uri.parse('https://data.rtt.io/gb-nr/service?uniqueIdentity=$cleanIdentity&detailed=true'),
+      Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$fullIdentity&detailed=true'),
+      Uri.parse('https://data.rtt.io/rtt/service?uniqueIdentity=$cleanIdentity&detailed=true'),
+    ];
 
     return _executeWithRetry((headers) async {
       http.Response? lastResponse;

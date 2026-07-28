@@ -222,6 +222,10 @@ class CallingPoint {
         dep['lateness'];
 
     final displayAsStr = asString(
+      json['status'] ??
+      temporal['status'] ??
+      locationDetail['status'] ??
+      locationMetadata['status'] ??
       temporal['displayAs'] ??
       temporal['serviceLocation'] ??
       locationDetail['serviceLocation'] ??

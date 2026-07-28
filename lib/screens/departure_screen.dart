@@ -55,9 +55,14 @@ class _DepartureScreenState extends State<DepartureScreen> {
   }
 
   void _handleAppResumed() {
-    // If the app is resumed, refresh the departures
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
     _loadDepartures(isRefresh: true);
     _startAutoRefresh();
+  }
+
+  void _stopAutoRefresh() {
+    _refreshTimer?.cancel();
+    _countdownKey.currentState?.stop();
   }
 
   void _startAutoRefresh() {
@@ -68,7 +73,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
         timer.cancel();
         return;
       }
-      _loadDepartures(isRefresh: true);
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _loadDepartures(isRefresh: true);
+      }
     });
   }
 
@@ -213,7 +220,7 @@ class _DepartureScreenState extends State<DepartureScreen> {
     );
   }
 
-  void _onDepartureTapped(Departure departure) {
+  Future<void> _onDepartureTapped(Departure departure) async {
     if (departure.serviceUid.isEmpty && departure.status != 'CANCELLED') {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Cannot track this service."),
@@ -222,7 +229,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
       return;
     }
 
-    Navigator.push(
+    _stopAutoRefresh();
+
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ServiceDetailScreen(
@@ -231,6 +240,10 @@ class _DepartureScreenState extends State<DepartureScreen> {
         ),
       ),
     );
+
+    if (!mounted) return;
+    _loadDepartures(isRefresh: true);
+    _startAutoRefresh();
   }
 
   String _formatTime(String? time) {
@@ -248,9 +261,11 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "EARLY": return "EARLY";
       case "ON TIME": return "ON TIME";
       case "CANCELLED": return "CANCELLED";
-      case "AT_PLAT": return isGrouped ? "AT PLAT" : "AT PLATFORM";
+      case "AT_PLAT":
+      case "AT_PLATFORM": return isGrouped ? "AT PLAT" : "AT PLATFORM";
       case "APPR_STAT":
-      case "APPR_PLAT": return isGrouped ? "APPR" : "APPROACHING";
+      case "APPR_PLAT":
+      case "APPROACHING": return isGrouped ? "APPR" : "APPROACHING";
       default:
         return status;
     }
@@ -631,10 +646,12 @@ class _DepartureScreenState extends State<DepartureScreen> {
         tagColor = Colors.red;
         break;
       case "AT_PLAT":
+      case "AT_PLATFORM":
         tagColor = Colors.blue;
         break;
       case "APPR_STAT":
       case "APPR_PLAT":
+      case "APPROACHING":
         tagColor = Colors.orange;
         break;
       default:
