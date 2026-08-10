@@ -12,6 +12,7 @@ import '../widgets/app_lifecycle_observer.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/rate_limit_card.dart';
 import '../widgets/settings_dialog.dart';
+import '../services/live_activity_service.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
   final Station station;
@@ -204,6 +205,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       _isLoading = false;
       _error = null;
     });
+
+    if (LiveActivityService().isStarred(widget.departure.serviceUid, widget.departure.runDate)) {
+      LiveActivityService().updateFromDeparture(widget.departure);
+      LiveActivityService().updateFromServiceDetail(service);
+    }
   }
 
   String _formatTime(String? time) {
@@ -283,6 +289,47 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         appBar: AppBar(
           title: titleWidget,
           actions: [
+            ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final liveService = LiveActivityService();
+                final isStarred = liveService.isStarred(
+                  widget.departure.serviceUid,
+                  widget.departure.runDate,
+                );
+                return IconButton(
+                  icon: Icon(
+                    isStarred ? Icons.star : Icons.star_border,
+                    color: isStarred ? Colors.amber : null,
+                  ),
+                  tooltip: isStarred
+                      ? 'Unstar Service (Remove Live Activity)'
+                      : 'Star Service (Start Live Activity)',
+                  onPressed: () async {
+                    final newState = await liveService.toggleStar(
+                      departure: widget.departure,
+                      stationName: widget.station.name,
+                      stationCrs: widget.station.crsCode,
+                    );
+                    if (_serviceDetail != null && newState) {
+                      await liveService.updateFromServiceDetail(_serviceDetail!);
+                    }
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          newState
+                              ? 'Starred service! Live Activity started.'
+                              : 'Unstarred service.',
+                        ),
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.settings),
               tooltip: 'Settings',

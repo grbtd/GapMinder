@@ -11,6 +11,7 @@ import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
 import '../widgets/rate_limit_card.dart';
 import '../widgets/settings_dialog.dart';
+import '../services/live_activity_service.dart';
 import 'service_detail_screen.dart';
 
 class DepartureScreen extends StatefulWidget {
@@ -150,6 +151,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
       for (var dep in departures) {
         final platformKey = (dep.platform?.isNotEmpty ?? false) ? dep.platform! : "TBC";
         grouped.putIfAbsent(platformKey, () => []).add(dep);
+        if (LiveActivityService().isStarred(dep.serviceUid, dep.runDate)) {
+          LiveActivityService().updateFromDeparture(dep);
+        }
       }
 
       setState(() {
@@ -289,6 +293,21 @@ class _DepartureScreenState extends State<DepartureScreen> {
         appBar: AppBar(
           title: Text("${widget.station.name} Departures"),
           actions: [
+            ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final starred = LiveActivityService().starredServices;
+                if (starred.isEmpty) return const SizedBox.shrink();
+                return IconButton(
+                  icon: Badge(
+                    label: Text('${starred.length}'),
+                    child: const Icon(Icons.star, color: Colors.amber),
+                  ),
+                  tooltip: 'View Starred Live Activities',
+                  onPressed: () => _showStarredServicesModal(context),
+                );
+              },
+            ),
             if (_departures != null && _departures!.isNotEmpty)
               IconButton(
                 icon: Icon(
@@ -673,8 +692,49 @@ class _DepartureScreenState extends State<DepartureScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              SizedBox(width: 50, child: Center(child: platformWidget)),
+              const SizedBox(width: 8),
+              SizedBox(width: 44, child: Center(child: platformWidget)),
+              ListenableBuilder(
+                listenable: LiveActivityService(),
+                builder: (context, _) {
+                  final liveService = LiveActivityService();
+                  final isStarred = liveService.isStarred(
+                    departure.serviceUid,
+                    departure.runDate,
+                  );
+                  return IconButton(
+                    icon: Icon(
+                      isStarred ? Icons.star : Icons.star_border,
+                      color: isStarred ? Colors.amber : Colors.grey.shade400,
+                    ),
+                    iconSize: 22,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    tooltip: isStarred
+                        ? 'Unstar service (Remove Live Activity)'
+                        : 'Star service (Start Live Activity)',
+                    onPressed: () async {
+                      final newState = await liveService.toggleStar(
+                        departure: departure,
+                        stationName: widget.station.name,
+                        stationCrs: widget.station.crsCode,
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            newState
+                                ? 'Starred ${departure.destination}! Live Activity started.'
+                                : 'Unstarred service.',
+                          ),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -729,6 +789,138 @@ class _DepartureScreenState extends State<DepartureScreen> {
         ),
         textAlign: TextAlign.center,
       ),
+    );
+  }
+
+  void _showStarredServicesModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          maxChildSize: 0.8,
+          minChildSize: 0.3,
+          builder: (context, scrollController) {
+            return ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final service = LiveActivityService();
+                final starredList = service.starredServices.values.toList();
+                return Container(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.star, color: Colors.amber),
+                              SizedBox(width: 8),
+                              Text(
+                                "Starred Live Activities",
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          if (starredList.isNotEmpty)
+                            TextButton(
+                              onPressed: () async {
+                                await service.clearAll();
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              child: const Text("Clear All"),
+                            ),
+                        ],
+                      ),
+                      const Divider(),
+                      if (starredList.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(32.0),
+                          child: Center(
+                            child: Text(
+                              "No active starred services.\nStar a service to track it as a Live Activity!",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.builder(
+                            controller: scrollController,
+                            itemCount: starredList.length,
+                            itemBuilder: (context, index) {
+                              final item = starredList[index];
+                              final uid = item['serviceUid'] ?? '';
+                              final runDate = item['runDate'] ?? '';
+                              final dest = item['destination'] ?? 'Unknown';
+                              final time = item['scheduledTime'] ?? '';
+                              final realtime = item['realtimeTime'] ?? '';
+                              final plat = item['platform'] ?? '';
+                              final station = item['stationName'] ?? '';
+                              final status = item['status'] ?? '';
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 4.0),
+                                child: ListTile(
+                                  leading: const Icon(Icons.star, color: Colors.amber),
+                                  title: Text(
+                                    "$time to $dest",
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Text(
+                                    "${station.isNotEmpty ? '$station | ' : ''}Plat ${plat.isNotEmpty ? plat : 'TBC'} ${status.isNotEmpty ? '($status)' : ''}",
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                    tooltip: 'Remove Live Activity',
+                                    onPressed: () async {
+                                      await service.unstarService(uid, runDate);
+                                    },
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    final dep = Departure(
+                                      serviceUid: uid,
+                                      runDate: runDate,
+                                      scheduledTime: time,
+                                      realtimeTime: realtime,
+                                      platform: plat,
+                                      operatorName: item['operator'],
+                                      destination: dest,
+                                      origin: item['origin'],
+                                      platformChanged: false,
+                                      status: status,
+                                      serviceType: 'train',
+                                    );
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ServiceDetailScreen(
+                                          station: widget.station,
+                                          departure: dep,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
