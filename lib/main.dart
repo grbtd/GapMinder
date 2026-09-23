@@ -1,8 +1,19 @@
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'screens/station_list_screen.dart';
+import 'helpers/preferences_service.dart';
+import 'services/live_activity_service.dart';
+import 'screens/splash_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await PreferencesService().init();
+  await LiveActivityService().init();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('[Firebase] Initialization notice: $e');
+  }
   runApp(const GapMinderApp());
 }
 
@@ -27,7 +38,7 @@ class GapMinderApp extends StatelessWidget {
             useMaterial3: true,
           ),
           themeMode: ThemeMode.system,
-          home: const StationListScreen(),
+          home: const SplashScreen(),
         );
       },
     );

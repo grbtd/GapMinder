@@ -2,12 +2,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../api/realtime_trains_service.dart';
+import '../helpers/preferences_service.dart';
 import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
 import '../models/service_detail.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
+import '../widgets/blinking_widget.dart';
+import '../widgets/rate_limit_card.dart';
+import '../widgets/settings_dialog.dart';
+import '../services/live_activity_service.dart';
 
 class ServiceDetailScreen extends StatefulWidget {
   final Station station;
@@ -25,10 +30,13 @@ class ServiceDetailScreen extends StatefulWidget {
 
 class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   final RealtimeTrainsService _apiService = RealtimeTrainsService();
+  final PreferencesService _prefs = PreferencesService();
   final GlobalKey<CountdownTimerState> _countdownKey = GlobalKey<CountdownTimerState>();
 
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _selectedStationKey = GlobalKey();
+  final GlobalKey _trainPositionKey = GlobalKey();
+  final GlobalKey _inTransitKey = GlobalKey();
 
   ServiceDetail? _serviceDetail;
   String? _error;
@@ -40,6 +48,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _prefs.addListener(_onPrefsChanged);
     _fetchServiceDetails();
     if (widget.departure.status != 'CANCELLED') {
       _startAutoRefresh();
@@ -48,12 +57,19 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
   @override
   void dispose() {
+    _prefs.removeListener(_onPrefsChanged);
     _refreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onPrefsChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   void _handleAppResumed() {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
     if (widget.departure.status == 'CANCELLED') {
       return;
     }
@@ -69,7 +85,9 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         timer.cancel();
         return;
       }
-      _fetchServiceDetails(isRefresh: true);
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _fetchServiceDetails(isRefresh: true);
+      }
     });
   }
 
@@ -87,6 +105,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       final serviceDetail = await _apiService.fetchServiceDetails(
         widget.departure.serviceUid,
         widget.departure.runDate,
+        forceRefresh: isRefresh,
       );
       if (!mounted) return;
 
@@ -94,17 +113,37 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
       if (!isRefresh) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_selectedStationKey.currentContext != null) {
+          final hasInTransitCtx = _inTransitKey.currentContext != null;
+          final hasTrainPosCtx = _trainPositionKey.currentContext != null;
+          final hasSelectedStationCtx = _selectedStationKey.currentContext != null;
+
+          final targetContext = _inTransitKey.currentContext ??
+              _trainPositionKey.currentContext ??
+              _selectedStationKey.currentContext;
+
+          debugPrint('[ServiceDetailScreen] postFrameCallback scroll target evaluation:');
+          debugPrint('  - _inTransitKey present: $hasInTransitCtx');
+          debugPrint('  - _trainPositionKey present: $hasTrainPosCtx');
+          debugPrint('  - _selectedStationKey present: $hasSelectedStationCtx');
+          debugPrint('  - Selected targetContext: ${targetContext != null ? "FOUND" : "NULL"}');
+
+          if (targetContext != null) {
             Scrollable.ensureVisible(
-              _selectedStationKey.currentContext!,
+              targetContext,
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeInOut,
-              alignment: 0.1,
+              alignment: 0.15,
             );
           }
         });
       }
 
+    } on RateLimitException catch (_) {
+      if (!mounted) return;
+      _countdownKey.currentState?.stop();
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       if (!isRefresh || _serviceDetail == null) {
@@ -125,7 +164,6 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         int lastHour = -1;
 
         for (var loc in service.locations) {
-          // Use the most relevant time available to establish the chronological timeline
           String? orderingTimeStr = loc.realtimeDeparture ?? loc.gbttBookedDeparture ?? loc.realtimeArrival ?? loc.gbttBookedArrival;
           
           DateTime? stopTime;
@@ -134,7 +172,6 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                int h = int.parse(orderingTimeStr.substring(0, 2));
                int m = int.parse(orderingTimeStr.substring(2, 4));
                
-               // Detect day wrapping: if hour jumps backward significantly (e.g. 23 -> 00)
                if (lastHour != -1) {
                   if (h < lastHour && (lastHour - h) > 12) {
                      currentDate = currentDate.add(const Duration(days: 1));
@@ -143,20 +180,23 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                lastHour = h;
                stopTime = DateTime(currentDate.year, currentDate.month, currentDate.day, h, m);
              } catch (_) {
-               // parse error
              }
           }
           timestamps.add(stopTime);
         }
-      } catch (e) {
-        // fallback
+      } catch (_) {
+        // Ignore date parse errors
       }
     }
     
-    // Ensure list size matches locations
     while (timestamps.length < service.locations.length) {
       timestamps.add(null);
     }
+
+    debugPrint('[ServiceDetailScreen] Processed service data:');
+    debugPrint('  - trainIdentity (Headcode): "${service.trainIdentity}"');
+    debugPrint('  - serviceUid: "${service.serviceUid}"');
+    debugPrint('  - total locations: ${service.locations.length}');
 
     setState(() {
       _serviceDetail = service;
@@ -165,6 +205,11 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       _isLoading = false;
       _error = null;
     });
+
+    if (LiveActivityService().isStarred(widget.departure.serviceUid, widget.departure.runDate)) {
+      LiveActivityService().updateFromDeparture(widget.departure);
+      LiveActivityService().updateFromServiceDetail(service);
+    }
   }
 
   String _formatTime(String? time) {
@@ -176,30 +221,51 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     }
   }
 
-  int _findTrainPositionIndex(ServiceDetail? service) {
-    if (service == null) return -1;
+  int _findTrainPositionIndexForLocations(List<CallingPoint> locations) {
+    if (locations.isEmpty) return -1;
 
-    int locationIndex = service.locations.indexWhere(
-            (loc) => (loc.serviceLocation ?? '').isNotEmpty && loc.serviceLocation != "AT_PLAT"
-    );
-    if (locationIndex != -1) return locationIndex;
+    int explicitStatusIndex = locations.indexWhere((loc) {
+      final status = (loc.serviceLocation ?? '').toUpperCase();
+      return status == 'AT_PLAT' ||
+          status == 'AT_PLATFORM' ||
+          status == 'APPR_PLAT' ||
+          status == 'APPR_STAT' ||
+          status == 'APPROACHING';
+    });
+    if (explicitStatusIndex != -1) {
+      debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Explicit platform status at index $explicitStatusIndex (${locations[explicitStatusIndex].locationName}, status: ${locations[explicitStatusIndex].serviceLocation})');
+      return explicitStatusIndex;
+    }
+
+    int lastActualIndex = -1;
+    for (int i = 0; i < locations.length; i++) {
+      if (locations[i].hasActualReport) {
+        lastActualIndex = i;
+      }
+    }
+    if (lastActualIndex != -1) {
+      debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Last actual report at index $lastActualIndex (${locations[lastActualIndex].locationName})');
+      return lastActualIndex;
+    }
 
     int lastDepartedIndex = -1;
     final now = DateTime.now();
-
-    for (int i = 0; i < _locationTimestamps.length; i++) {
+    for (int i = 0; i < _locationTimestamps.length && i < locations.length; i++) {
       final ts = _locationTimestamps[i];
-      if (ts != null) {
-        // If the calculated timestamp (which accounts for day wrap) is in the past
-        if (ts.isBefore(now)) {
-          lastDepartedIndex = i;
-        } else {
-          // Assuming sorted list, once we hit a future time, we stop
-          break;
-        }
+      if (ts != null && ts.isBefore(now)) {
+        lastDepartedIndex = i;
+      } else if (ts != null) {
+        break;
       }
     }
-    return lastDepartedIndex;
+    final resultIdx = lastDepartedIndex != -1 ? lastDepartedIndex : 0;
+    debugPrint('[ServiceDetailScreen] _findTrainPositionIndex -> Timestamp check index $resultIdx (${locations[resultIdx].locationName})');
+    return resultIdx;
+  }
+
+  int _findTrainPositionIndex(ServiceDetail? service) {
+    if (service == null) return -1;
+    return _findTrainPositionIndexForLocations(service.locations);
   }
 
   @override
@@ -223,9 +289,55 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         appBar: AppBar(
           title: titleWidget,
           actions: [
+            ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final liveService = LiveActivityService();
+                final isStarred = liveService.isStarred(
+                  widget.departure.serviceUid,
+                  widget.departure.runDate,
+                );
+                return IconButton(
+                  icon: Icon(
+                    isStarred ? Icons.star : Icons.star_border,
+                    color: isStarred ? Colors.amber : null,
+                  ),
+                  tooltip: isStarred
+                      ? 'Unstar Service (Remove Live Activity)'
+                      : 'Star Service (Start Live Activity)',
+                  onPressed: () async {
+                    final newState = await liveService.toggleStar(
+                      departure: widget.departure,
+                      stationName: widget.station.name,
+                      stationCrs: widget.station.crsCode,
+                    );
+                    if (_serviceDetail != null && newState) {
+                      await liveService.updateFromServiceDetail(_serviceDetail!);
+                    }
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          newState
+                              ? 'Starred service! Live Activity started.'
+                              : 'Unstarred service.',
+                        ),
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () => showSettingsDialog(context),
+            ),
             if (widget.departure.status != 'CANCELLED')
               Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
                 child: CountdownTimer(
                   key: _countdownKey,
                   onRefresh: () => _fetchServiceDetails(isRefresh: true),
@@ -252,6 +364,19 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       );
     }
 
+    if (_apiService.isRateLimited) {
+      return Column(
+        children: [
+          RateLimitCard(
+            resetTime: _apiService.rateLimitResetTime!,
+            onRetry: () => _fetchServiceDetails(isRefresh: true),
+          ),
+          if (_serviceDetail != null)
+            Expanded(child: _buildServiceDetailView(_serviceDetail!)),
+        ],
+      );
+    }
+
     if (_serviceDetail == null) {
       return const Center(child: Text("No service details found."));
     }
@@ -263,34 +388,73 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     final theme = Theme.of(context);
     final isCancelled = widget.departure.status == 'CANCELLED';
 
-    String article = "A";
-    if (service.atocName.isNotEmpty) {
-      String firstLetter = service.atocName.substring(0, 1).toLowerCase();
-      if (['a', 'e', 'i', 'o', 'u'].contains(firstLetter)) {
-        article = "An";
+    final displayLocations = _prefs.isNerdMode
+        ? service.locations
+        : service.locations.where((loc) => loc.serviceLocation != 'PASS').toList();
+    final activeTrainIdx = _findTrainPositionIndexForLocations(displayLocations);
+
+    String serviceText = "";
+    if (service.stockBranding != null && service.stockBranding!.isNotEmpty) {
+      serviceText = "${formatOperatorStockService(service.atocName, service.stockBranding)} to ${service.destination} from ${service.origin}";
+    } else {
+      String article = "A";
+      if (service.atocName.isNotEmpty) {
+        String firstLetter = service.atocName.substring(0, 1).toLowerCase();
+        if (['a', 'e', 'i', 'o', 'u', 'l'].contains(firstLetter)) {
+          article = "An";
+        }
       }
+      serviceText = "$article ${service.atocName} service to ${service.destination} from ${service.origin}";
+    }
+
+    if (service.coachCount != null && service.coachCount! > 0) {
+      serviceText += ", formed of ${service.coachCount} coaches";
     }
 
     return ListView.builder(
       controller: _scrollController,
-      itemCount: service.locations.length + 1, // +1 for the header
+      cacheExtent: 20000.0,
+      itemCount: displayLocations.length + 1, // +1 for the header
       itemBuilder: (context, index) {
         if (index == 0) {
-          // Build the header
           return Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
+                if (_prefs.isNerdMode && service.trainIdentity.isNotEmpty) ...[
+                  Text(
+                    "Head Code: ${service.trainIdentity}",
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 Text(
-                  "Head Code: ${service.trainIdentity}",
-                  style: theme.textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "$article ${service.atocName} service to ${service.destination} from ${service.origin}",
+                  serviceText,
                   style: theme.textTheme.bodyLarge,
                   textAlign: TextAlign.center,
                 ),
+                if (_prefs.isNerdMode) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.amber, width: 1),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.psychology, size: 16, color: Colors.amber),
+                        SizedBox(width: 6),
+                        Text(
+                          "Nerd Mode Active 🤓",
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (isCancelled) ...[
                   const SizedBox(height: 16),
                   Text(
@@ -310,13 +474,31 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         }
 
         final locationIndex = index - 1;
-        final location = service.locations[locationIndex];
+        final location = displayLocations[locationIndex];
         final isSelectedStation = location.crs == widget.station.crsCode;
-        final isFinalDestination = locationIndex == service.locations.length - 1;
+        final isFinalDestination = locationIndex == displayLocations.length - 1;
         final isFirstStation = locationIndex == 0;
 
-        final bool isTrainInTransitHere = _trainPositionIndex == locationIndex &&
-            locationIndex < service.locations.length - 1;
+        final currentLocation = displayLocations[activeTrainIdx];
+        final currentStatus = (currentLocation.serviceLocation ?? '').toUpperCase();
+        final bool isAtOrApproachingPlatform = currentStatus == 'AT_PLAT' ||
+            currentStatus == 'AT_PLATFORM' ||
+            currentStatus == 'APPR_PLAT' ||
+            currentStatus == 'APPR_STAT' ||
+            currentStatus == 'APPROACHING';
+        final bool hasDepartedOrigin = activeTrainIdx > 0 || currentLocation.hasActualReport;
+
+        final bool isTrainInTransitHere = activeTrainIdx == locationIndex &&
+            locationIndex < displayLocations.length - 1 &&
+            !isAtOrApproachingPlatform &&
+            hasDepartedOrigin;
+
+        Key? itemKey;
+        if (locationIndex == activeTrainIdx) {
+          itemKey = _trainPositionKey;
+        } else if (isSelectedStation) {
+          itemKey = _selectedStationKey;
+        }
 
         return Column(
           children: [
@@ -327,17 +509,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               isFinalDestination,
               isFirstStation,
               isCancelled,
-              key: isSelectedStation ? _selectedStationKey : null,
+              key: itemKey,
             ),
             if (isTrainInTransitHere && !isCancelled)
-              _buildInTransitView(service.locations[_trainPositionIndex]),
+              _buildInTransitView(
+                displayLocations[activeTrainIdx],
+                key: _inTransitKey,
+              ),
           ],
         );
       },
     );
   }
 
-  Widget _buildInTransitView(CallingPoint lastDepartedStation) {
+  Widget _buildInTransitView(CallingPoint lastDepartedStation, {Key? key}) {
     final theme = Theme.of(context);
     String lateness = "On time";
     Color latenessColor = Colors.green;
@@ -352,6 +537,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     }
 
     return IntrinsicHeight(
+      key: key,
       child: Row(
         children: [
           SizedBox(
@@ -359,7 +545,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
             child: Center(
               child: Container(
                 width: 2,
-                color: theme.colorScheme.primary.withOpacity(0.5),
+                color: theme.colorScheme.primary.withValues(alpha: 0.5),
               ),
             ),
           ),
@@ -387,28 +573,67 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
   Widget _buildTimelineStop(CallingPoint location, int index, bool isSelectedStation, bool isFinalDestination, bool isFirstStation, bool isCancelled, {Key? key}) {
     final theme = Theme.of(context);
-    final isAtPlatform = location.serviceLocation == "AT_PLAT";
-    final isApproaching = location.serviceLocation == "APPR_STAT" || location.serviceLocation == "APPR_PLAT";
+    final isAtPlatform = location.serviceLocation == "AT_PLAT" || location.serviceLocation == "AT_PLATFORM";
+    final isApproaching = location.serviceLocation == "APPR_STAT" || location.serviceLocation == "APPR_PLAT" || location.serviceLocation == "APPROACHING";
 
     bool hasDeparted = false;
     if (!isCancelled) {
-      if (index < _locationTimestamps.length) {
-        final ts = _locationTimestamps[index];
-        if (ts != null && ts.isBefore(DateTime.now())) {
-           hasDeparted = true;
-        }
+      if (location.hasActualReport || index <= _trainPositionIndex) {
+        hasDeparted = true;
       }
     }
 
     final hasArrived = !isCancelled && (location.realtimeArrival?.isNotEmpty ?? false);
 
+    int? prevCoachCount;
+    if (_serviceDetail != null) {
+      final displayLocations = _prefs.isNerdMode
+          ? _serviceDetail!.locations
+          : _serviceDetail!.locations.where((loc) => loc.serviceLocation != 'PASS').toList();
+      for (int i = index - 1; i >= 0; i--) {
+        if (displayLocations[i].coachCount != null) {
+          prevCoachCount = displayLocations[i].coachCount;
+          break;
+        }
+      }
+    }
+
+    Widget? formationWidget;
+    if (location.coachCount != null) {
+      if (prevCoachCount != null && location.coachCount! > prevCoachCount) {
+        final diff = location.coachCount! - prevCoachCount;
+        formationWidget = _buildFormationTag(
+          "${location.coachCount} Coaches (+$diff attached)",
+          Icons.trending_up,
+          Colors.green,
+        );
+      } else if (prevCoachCount != null && location.coachCount! < prevCoachCount) {
+        final diff = prevCoachCount - location.coachCount!;
+        formationWidget = _buildFormationTag(
+          "${location.coachCount} Coaches (-$diff detached)",
+          Icons.trending_down,
+          Colors.orange,
+        );
+      } else if (prevCoachCount == null || isFirstStation) {
+        formationWidget = _buildFormationTag(
+          "${location.coachCount} Coaches",
+          Icons.train,
+          theme.colorScheme.secondary,
+        );
+      }
+    }
+
     Color circleColor = (hasDeparted || isCancelled)
         ? Colors.grey
         : theme.colorScheme.primary;
 
+    final bool isPassPoint = location.serviceLocation == 'PASS';
+
     IconData circleIcon;
     if (isCancelled) {
       circleIcon = Icons.cancel;
+    } else if (isPassPoint) {
+      circleIcon = hasDeparted ? Icons.fast_forward : Icons.fast_forward_outlined;
     } else if (isSelectedStation) {
       circleIcon = Icons.location_pin;
     } else if (isAtPlatform) {
@@ -416,22 +641,22 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
     } else if (hasDeparted) {
       circleIcon = Icons.check_circle;
     } else if (isFinalDestination) {
-      circleIcon = Icons.flag;
+      circleIcon = hasDeparted ? Icons.flag : Icons.outlined_flag;
     } else {
-      circleIcon = Icons.circle;
+      circleIcon = Icons.circle_outlined;
     }
     
     Color topSegmentColor = (isFirstStation)
         ? Colors.transparent
         : ((hasDeparted || hasArrived || isCancelled)
             ? Colors.grey
-            : theme.colorScheme.primary.withOpacity(0.5));
+            : theme.colorScheme.primary.withValues(alpha: 0.5));
 
     Color bottomSegmentColor = (isFinalDestination)
         ? Colors.transparent
         : ((hasDeparted || isCancelled)
             ? Colors.grey
-            : theme.colorScheme.primary.withOpacity(0.5));
+            : theme.colorScheme.primary.withValues(alpha: 0.5));
 
     return IntrinsicHeight(
       key: key,
@@ -474,12 +699,24 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   if (location.platform != null && location.platform!.isNotEmpty)
-                    Text(
-                        "Platform: ${location.platform}",
-                        style: theme.textTheme.bodySmall?.copyWith(color: isCancelled ? Colors.grey : null)
-                    ),
+                    location.platformChanged
+                        ? BlinkingWidget(
+                            child: Text(
+                              "Platform: ${location.platform}",
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: isCancelled ? Colors.grey : Colors.orange,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            "Platform: ${location.platform}",
+                            style: theme.textTheme.bodySmall?.copyWith(color: isCancelled ? Colors.grey : null),
+                          ),
                   const SizedBox(height: 4),
                   _buildStopTimes(location, isCancelled),
+                  if (formationWidget != null && !isCancelled)
+                    formationWidget,
                   if (isAtPlatform && !isCancelled)
                     _buildStatusTag("AT PLATFORM", Colors.blue),
                   if (isApproaching && !isCancelled)
@@ -495,39 +732,12 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
   Widget _buildStopTimes(CallingPoint location, bool isCancelled) {
     final theme = Theme.of(context);
+    final isPass = location.serviceLocation == 'PASS';
+
     final scheduledArrival = _formatTime(location.gbttBookedArrival);
     final realtimeArrival = _formatTime(location.realtimeArrival);
     final scheduledDeparture = _formatTime(location.gbttBookedDeparture);
     final realtimeDeparture = _formatTime(location.realtimeDeparture);
-
-    if (isCancelled) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (scheduledArrival != "--:--")
-            Text(
-              "$scheduledArrival (Arr)",
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.grey,
-                decoration: TextDecoration.lineThrough,
-              ),
-            ),
-          if (scheduledDeparture != "--:--")
-            Text(
-              "$scheduledDeparture (Dep)",
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.grey,
-                decoration: TextDecoration.lineThrough,
-              ),
-            ),
-        ],
-      );
-    }
-
-    String arrivalText = scheduledArrival;
-    String departureText = scheduledDeparture;
-    Color arrivalColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
-    Color departureColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
 
     Color getColor(String sched, String real) {
       if (real == sched) return Colors.green;
@@ -535,25 +745,81 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         final s = DateFormat.Hm().parse(sched);
         final r = DateFormat.Hm().parse(real);
         int diff = r.difference(s).inMinutes;
-        if (diff < -720) diff += 1440;
-        else if (diff > 720) diff -= 1440;
+        if (diff < -720) {
+          diff += 1440;
+        } else if (diff > 720) {
+          diff -= 1440;
+        }
         return diff > 0 ? Colors.red : Colors.green;
       } catch (e) {
         return Colors.red;
       }
     }
 
-    if (realtimeArrival != "--:--") {
-      arrivalColor = getColor(scheduledArrival, realtimeArrival);
-    }
-    if (realtimeDeparture != "--:--") {
-      departureColor = getColor(scheduledDeparture, realtimeDeparture);
+    if (isCancelled) {
+      final timeToShow = isPass
+          ? (scheduledDeparture != "--:--" ? scheduledDeparture : scheduledArrival)
+          : scheduledDeparture;
+      return Text(
+        isPass ? "$timeToShow (Pass)" : "$timeToShow (Cancelled)",
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: Colors.grey,
+          decoration: TextDecoration.lineThrough,
+        ),
+      );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (scheduledArrival != "--:--" || realtimeArrival != "--:--")
+    // 1. Handle PASS point display
+    if (isPass) {
+      final sched = scheduledDeparture != "--:--" ? scheduledDeparture : scheduledArrival;
+      final real = realtimeDeparture != "--:--" ? realtimeDeparture : realtimeArrival;
+
+      Color passColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
+      if (real != "--:--" && sched != "--:--") {
+        passColor = getColor(sched, real);
+      }
+
+      return Row(
+        children: [
+          if (real != "--:--")
+            Text(
+              real,
+              style: theme.textTheme.bodyMedium?.copyWith(color: passColor, fontWeight: FontWeight.bold),
+            ),
+          if (real != "--:--" && sched != "--:--" && sched != real)
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Text(
+                sched,
+                style: theme.textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough),
+              ),
+            ),
+          if (real == "--:--" && sched != "--:--")
+            Text(sched, style: theme.textTheme.bodyMedium),
+          Text(" (Pass)", style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
+        ],
+      );
+    }
+
+    // 2. Handle CALL / STOP points
+    final hasArr = scheduledArrival != "--:--" || realtimeArrival != "--:--";
+    final hasDep = scheduledDeparture != "--:--" || realtimeDeparture != "--:--";
+    final isSameTime = (scheduledArrival == scheduledDeparture) && (realtimeArrival == realtimeDeparture);
+
+    if (hasArr && hasDep && !isSameTime) {
+      Color arrivalColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
+      Color departureColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
+
+      if (realtimeArrival != "--:--" && scheduledArrival != "--:--") {
+        arrivalColor = getColor(scheduledArrival, realtimeArrival);
+      }
+      if (realtimeDeparture != "--:--" && scheduledDeparture != "--:--") {
+        departureColor = getColor(scheduledDeparture, realtimeDeparture);
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
               if (realtimeArrival != "--:--")
@@ -561,21 +827,20 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   realtimeArrival,
                   style: theme.textTheme.bodyMedium?.copyWith(color: arrivalColor, fontWeight: FontWeight.bold),
                 ),
-              if (realtimeArrival != "--:--" && scheduledArrival != realtimeArrival)
+              if (realtimeArrival != "--:--" && scheduledArrival != "--:--" && scheduledArrival != realtimeArrival)
                 Padding(
                   padding: const EdgeInsets.only(left: 8.0),
                   child: Text(
-                    arrivalText,
+                    scheduledArrival,
                     style: theme.textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough),
                   ),
                 ),
               if (realtimeArrival == "--:--")
-                Text(arrivalText, style: theme.textTheme.bodyMedium),
+                Text(scheduledArrival, style: theme.textTheme.bodyMedium),
               Text(" (Arr)", style: theme.textTheme.bodySmall),
             ],
           ),
-
-        if (scheduledDeparture != "--:--" || realtimeDeparture != "--:--")
+          const SizedBox(height: 2),
           Row(
             children: [
               if (realtimeDeparture != "--:--")
@@ -583,21 +848,52 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   realtimeDeparture,
                   style: theme.textTheme.bodyMedium?.copyWith(color: departureColor, fontWeight: FontWeight.bold),
                 ),
-              if (realtimeDeparture != "--:--" && scheduledDeparture != realtimeDeparture)
+              if (realtimeDeparture != "--:--" && scheduledDeparture != "--:--" && scheduledDeparture != realtimeDeparture)
                 Padding(
                   padding: const EdgeInsets.only(left: 8.0),
                   child: Text(
-                    departureText,
+                    scheduledDeparture,
                     style: theme.textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough),
                   ),
                 ),
               if (realtimeDeparture == "--:--")
-                Text(departureText, style: theme.textTheme.bodyMedium),
+                Text(scheduledDeparture, style: theme.textTheme.bodyMedium),
               Text(" (Dep)", style: theme.textTheme.bodySmall),
             ],
           ),
-      ],
-    );
+        ],
+      );
+    } else {
+      final sched = hasDep ? scheduledDeparture : scheduledArrival;
+      final real = hasDep ? realtimeDeparture : realtimeArrival;
+      final label = (hasArr && !hasDep) ? " (Arr)" : "";
+
+      Color timeColor = theme.textTheme.bodyMedium?.color ?? Colors.white;
+      if (real != "--:--" && sched != "--:--") {
+        timeColor = getColor(sched, real);
+      }
+
+      return Row(
+        children: [
+          if (real != "--:--")
+            Text(
+              real,
+              style: theme.textTheme.bodyMedium?.copyWith(color: timeColor, fontWeight: FontWeight.bold),
+            ),
+          if (real != "--:--" && sched != "--:--" && sched != real)
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Text(
+                sched,
+                style: theme.textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough),
+              ),
+            ),
+          if (real == "--:--" && sched != "--:--")
+            Text(sched, style: theme.textTheme.bodyMedium),
+          if (label.isNotEmpty) Text(label, style: theme.textTheme.bodySmall),
+        ],
+      );
+    }
   }
 
   Widget _buildStatusTag(String status, Color color) {
@@ -605,7 +901,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: color, width: 1),
       ),
@@ -616,6 +912,33 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
           fontWeight: FontWeight.bold,
           fontSize: 10,
         ),
+      ),
+    );
+  }
+
+  Widget _buildFormationTag(String text, IconData icon, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

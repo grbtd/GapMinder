@@ -1,3 +1,5 @@
+import '../helpers/json_parsers.dart';
+
 class Departure {
   final String serviceUid;
   final String runDate;
@@ -6,11 +8,15 @@ class Departure {
   final String? platform; // Nullable
   final String? operatorName; // Nullable
   final String destination;
+  final String? origin;
+  final bool isTerminating;
   final bool platformChanged;
   final String? status; // Nullable
   final String? serviceType; // Nullable
   final String? cancelReasonShortText; // Nullable
   final String? cancelReasonLongText; // Nullable
+  final int? coachCount;
+  final String? stockBranding;
 
   Departure({
     required this.serviceUid,
@@ -20,59 +26,257 @@ class Departure {
     required this.platform,
     required this.operatorName,
     required this.destination,
+    this.origin,
+    this.isTerminating = false,
     required this.platformChanged,
     required this.status,
     required this.serviceType,
     this.cancelReasonShortText,
     this.cancelReasonLongText,
+    this.coachCount,
+    this.stockBranding,
   });
 
+  Departure copyWith({
+    String? serviceUid,
+    String? runDate,
+    String? scheduledTime,
+    String? realtimeTime,
+    String? platform,
+    String? operatorName,
+    String? destination,
+    String? origin,
+    bool? isTerminating,
+    bool? platformChanged,
+    String? status,
+    String? serviceType,
+    String? cancelReasonShortText,
+    String? cancelReasonLongText,
+    int? coachCount,
+    String? stockBranding,
+  }) {
+    return Departure(
+      serviceUid: serviceUid ?? this.serviceUid,
+      runDate: runDate ?? this.runDate,
+      scheduledTime: scheduledTime ?? this.scheduledTime,
+      realtimeTime: realtimeTime ?? this.realtimeTime,
+      platform: platform ?? this.platform,
+      operatorName: operatorName ?? this.operatorName,
+      destination: destination ?? this.destination,
+      origin: origin ?? this.origin,
+      isTerminating: isTerminating ?? this.isTerminating,
+      platformChanged: platformChanged ?? this.platformChanged,
+      status: status ?? this.status,
+      serviceType: serviceType ?? this.serviceType,
+      cancelReasonShortText: cancelReasonShortText ?? this.cancelReasonShortText,
+      cancelReasonLongText: cancelReasonLongText ?? this.cancelReasonLongText,
+      coachCount: coachCount ?? this.coachCount,
+      stockBranding: stockBranding ?? this.stockBranding,
+    );
+  }
+
   factory Departure.fromJson(Map<String, dynamic> json) {
-    Map<String, dynamic> locationDetail =
-        json['locationDetail'] ?? <String, dynamic>{};
+    final locationDetail = (json['locationDetail'] as Map<String, dynamic>?) ??
+        (json['location'] as Map<String, dynamic>?) ??
+        {};
+    final metadata = (json['locationMetadata'] as Map<String, dynamic>?) ??
+        (json['metadata'] as Map<String, dynamic>?) ??
+        {};
+    final schedule = (json['scheduleMetadata'] as Map<String, dynamic>?) ?? {};
+    final temporal = (json['temporalData'] as Map<String, dynamic>?) ?? {};
+
+    final destinationsData = locationDetail['destination'] ??
+        metadata['destination'] ??
+        json['destination'] ??
+        schedule['destination'] ??
+        locationDetail['destinations'] ??
+        metadata['destinations'] ??
+        json['destinations'] ??
+        json['destinationLocation'];
+
+    final destinationStr = parseLocationDescription(destinationsData);
+
+    final originsData = locationDetail['origin'] ??
+        metadata['origin'] ??
+        json['origin'] ??
+        schedule['origin'] ??
+        locationDetail['origins'] ??
+        metadata['origins'] ??
+        json['origins'] ??
+        json['originLocation'];
+
+    final originStr = parseLocationDescription(originsData);
+
+    final operatorData = schedule['operator'] ??
+        json['operator'] ??
+        locationDetail['operator'] ??
+        metadata['operator'];
+    final operatorNameStr = parseOperatorName(
+      operatorData,
+      json['atocName'] ?? locationDetail['atocName'] ?? json['operatorName'],
+    );
+
+    final serviceUidStr = parseServiceUid(json, schedule, metadata);
+    final runDateStr = asString(
+          schedule['departureDate'] ??
+          json['runDate'] ??
+          json['date'] ??
+          schedule['date'] ??
+          locationDetail['runDate'],
+        ) ??
+        '';
 
     String? getStatus() {
-      if (locationDetail['displayAs'] == 'CANCELLED_CALL') {
+      final displayAs = locationDetail['displayAs']?.toString() ??
+          metadata['displayAs']?.toString() ??
+          json['displayAs']?.toString();
+      if (displayAs != null &&
+          (displayAs == 'CANCELLED_CALL' ||
+              displayAs == 'CANCELLED_PASS' ||
+              displayAs.startsWith('CANCELLED'))) {
         return 'CANCELLED';
       }
 
-      // Prioritise serviceLocation as it contains specific statuses like AT_PLAT
-      final serviceLocation = locationDetail['serviceLocation'];
-      if (serviceLocation != null && (serviceLocation as String).isNotEmpty) {
-        return serviceLocation;
-      }
-
-      final realtime = locationDetail['realtimeDeparture'];
-      final scheduled = locationDetail['gbttBookedDeparture'];
-
-      if (realtime != null && scheduled != null) {
-        if (realtime != scheduled) {
-          return 'LATE';
-        } else {
-          return 'ON TIME';
+      // Prioritize explicit live positioning (AT_PLAT, AT_PLATFORM, APPR_PLAT, APPR_STAT, APPROACHING)
+      final serviceLocation = json['status']?.toString() ??
+          locationDetail['status']?.toString() ??
+          temporal['status']?.toString() ??
+          metadata['status']?.toString() ??
+          locationDetail['serviceLocation']?.toString() ??
+          metadata['serviceLocation']?.toString() ??
+          json['serviceLocation']?.toString();
+      if (serviceLocation != null && serviceLocation.isNotEmpty) {
+        final locUpper = serviceLocation.toUpperCase();
+        if (locUpper == 'AT_PLAT' ||
+            locUpper == 'AT_PLATFORM' ||
+            locUpper == 'APPR_PLAT' ||
+            locUpper == 'APPR_STAT' ||
+            locUpper == 'APPROACHING') {
+          return locUpper;
         }
       }
 
-      if (json['trainStatus'] == 'LATE') {
-        return 'LATE';
+      // Fallback to structured lateness information
+      final lateness = temporal['realtimeAdvertisedLateness'] ??
+          locationDetail['realtimeGbttDepartureLateness'] ??
+          json['lateness'];
+      if (lateness != null) {
+        final latenessNum = num.tryParse(lateness.toString());
+        if (latenessNum != null) {
+          if (latenessNum > 0) return 'LATE';
+          if (latenessNum < 0) return 'EARLY';
+          return 'ON TIME';
+        }
       }
 
       return null;
     }
 
+    // Timing logic: check departure first, then arrival, then pass
+    final dep = temporal['departure'] ?? json['departure'] ?? {};
+    final arr = temporal['arrival'] ?? json['arrival'] ?? {};
+    final pass = temporal['pass'] ?? json['pass'] ?? {};
+
+    String? scheduledTimeRaw = locationDetail['gbttBookedDeparture'] ??
+        locationDetail['gbttBookedArrival'] ??
+        locationDetail['publicTime'] ??
+        dep['scheduled'] ??
+        arr['scheduled'] ??
+        pass['scheduled'] ??
+        json['gbttBookedDeparture'] ??
+        json['scheduledTime'];
+
+    String? realtimeTimeRaw = locationDetail['realtimeDeparture'] ??
+        locationDetail['realtimeArrival'] ??
+        dep['realtimeForecast'] ??
+        dep['realtimeActual'] ??
+        arr['realtimeForecast'] ??
+        arr['realtimeActual'] ??
+        pass['realtimeForecast'] ??
+        pass['realtimeActual'] ??
+        json['realtimeDeparture'] ??
+        json['realtimeTime'];
+
+    final platformRaw = locationDetail['platform'] ??
+        metadata['platform'] ??
+        json['platform'];
+    final platformStr = parsePlatform(platformRaw);
+    final platformChanged = parsePlatformChanged(
+      platformRaw,
+      locationDetail['platformChanged'] ?? metadata['platform']?['changed'] ?? json['platformChanged'],
+    );
+
+    final displayAsStr = asString(
+      locationDetail['displayAs'] ??
+      metadata['displayAs'] ??
+      json['displayAs'] ??
+      temporal['displayAs']
+    )?.toUpperCase();
+
+    final locationTypeStr = asString(
+      locationDetail['locationType'] ??
+      metadata['locationType'] ??
+      json['locationType']
+    )?.toUpperCase();
+
+    final bool hasNoDepartureTime = (dep is Map && (dep['scheduled'] == null && dep['realtimeForecast'] == null && dep['realtimeActual'] == null)) &&
+        locationDetail['gbttBookedDeparture'] == null &&
+        json['gbttBookedDeparture'] == null;
+
+    final bool hasArrivalTime = (arr is Map && (arr['scheduled'] != null || arr['realtimeForecast'] != null || arr['realtimeActual'] != null)) ||
+        locationDetail['gbttBookedArrival'] != null ||
+        json['gbttBookedArrival'] != null;
+
+    final bool isTerminating = displayAsStr == 'DESTINATION' ||
+        displayAsStr == 'TERMINATES' ||
+        displayAsStr == 'ARRIVES' ||
+        displayAsStr == 'ARRIVING' ||
+        locationTypeStr == 'DESTINATION' ||
+        locationTypeStr == 'TERMINATES' ||
+        destinationStr == 'Terminating' ||
+        (hasNoDepartureTime && hasArrivalTime);
+
     return Departure(
-      serviceUid: json['serviceUid'] ?? '',
-      runDate: json['runDate'] ?? '',
-      scheduledTime: locationDetail['gbttBookedDeparture'],
-      realtimeTime: locationDetail['realtimeDeparture'],
-      platform: locationDetail['platform'],
-      operatorName: json['atocName'],
-      destination: locationDetail['destination']?[0]?['description'] ?? 'Unknown',
-      platformChanged: locationDetail['platformChanged'] ?? false,
+      serviceUid: serviceUidStr,
+      runDate: runDateStr,
+      scheduledTime: formatToHHmm(scheduledTimeRaw),
+      realtimeTime: formatToHHmm(realtimeTimeRaw),
+      platform: platformStr,
+      operatorName: operatorNameStr,
+      destination: destinationStr,
+      origin: originStr != 'Unknown' ? originStr : null,
+      isTerminating: isTerminating,
+      platformChanged: platformChanged,
       status: getStatus(),
-      serviceType: json['serviceType'],
-      cancelReasonShortText: locationDetail['cancelReasonShortText'],
-      cancelReasonLongText: locationDetail['cancelReasonLongText'],
+      serviceType: asString(
+        schedule['modeType'] ??
+        json['modeType'] ??
+        json['serviceType'] ??
+        locationDetail['serviceType'],
+      ),
+      cancelReasonShortText: asString(
+        locationDetail['cancelReasonShortText'] ??
+        metadata['cancelReasonShortText'] ??
+        json['cancelReasonShortText'] ??
+        locationDetail['cancelReasonText'],
+      ),
+      cancelReasonLongText: asString(
+        locationDetail['cancelReasonLongText'] ??
+        metadata['cancelReasonLongText'] ??
+        json['cancelReasonLongText'],
+      ),
+      coachCount: parseCoachCount(
+        json['numberOfVehicles'] ?? json['length'] ?? json['coaches'] ?? json['formation'],
+        metadata['numberOfVehicles'] ?? metadata['length'] ?? metadata['coaches'],
+        locationDetail['numberOfVehicles'] ?? locationDetail['length'] ?? locationDetail['coaches'],
+      ),
+      stockBranding: parseStockBranding(
+        locationDetail['stockBranding'] ?? locationDetail['stock'] ?? locationDetail['formation'],
+        metadata['stockBranding'] ?? metadata['stock'] ?? metadata['formation'],
+        json['stockBranding'] ?? json['stock'] ?? json['formation'],
+        schedule['stockBranding'] ?? schedule['stock'] ?? schedule['formation'],
+      ),
     );
   }
 }
+

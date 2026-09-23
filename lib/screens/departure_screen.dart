@@ -2,12 +2,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../api/realtime_trains_service.dart';
+import '../helpers/preferences_service.dart';
 import '../helpers/text_formatter.dart';
 import '../models/station.dart';
 import '../models/departure.dart';
 import '../widgets/blinking_widget.dart';
 import '../widgets/countdown_timer.dart';
 import '../widgets/app_lifecycle_observer.dart';
+import '../widgets/rate_limit_card.dart';
+import '../widgets/settings_dialog.dart';
+import '../services/live_activity_service.dart';
 import 'service_detail_screen.dart';
 
 class DepartureScreen extends StatefulWidget {
@@ -21,10 +25,13 @@ class DepartureScreen extends StatefulWidget {
 
 class _DepartureScreenState extends State<DepartureScreen> {
   final RealtimeTrainsService _apiService = RealtimeTrainsService();
+  final PreferencesService _prefs = PreferencesService();
   final GlobalKey<CountdownTimerState> _countdownKey = GlobalKey<CountdownTimerState>();
 
   List<Departure>? _departures;
   String? _error;
+  String? _loadingStatus;
+  DateTime? _pivotTime;
   bool _isLoading = true;
   bool _isGroupingByPlatform = false;
   Map<String, List<Departure>> _groupedDepartures = {};
@@ -33,20 +40,32 @@ class _DepartureScreenState extends State<DepartureScreen> {
   @override
   void initState() {
     super.initState();
+    _prefs.addListener(_onPrefsChanged);
     _loadDepartures();
     _startAutoRefresh();
   }
 
   @override
   void dispose() {
+    _prefs.removeListener(_onPrefsChanged);
     _refreshTimer?.cancel();
     super.dispose();
   }
 
+  void _onPrefsChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   void _handleAppResumed() {
-    // If the app is resumed, refresh the departures
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
     _loadDepartures(isRefresh: true);
     _startAutoRefresh();
+  }
+
+  void _stopAutoRefresh() {
+    _refreshTimer?.cancel();
+    _countdownKey.currentState?.stop();
   }
 
   void _startAutoRefresh() {
@@ -57,30 +76,99 @@ class _DepartureScreenState extends State<DepartureScreen> {
         timer.cancel();
         return;
       }
-      _loadDepartures(isRefresh: true);
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _loadDepartures(isRefresh: true);
+      }
     });
   }
 
-  Future<void> _loadDepartures({bool isRefresh = false}) async {
+  DateTime? _parseDepartureTime(Departure dep) {
+    final timeStr = dep.realtimeTime ?? dep.scheduledTime;
+    if (timeStr == null || timeStr.length < 4) return null;
+    try {
+      final hour = int.parse(timeStr.substring(0, 2));
+      final minute = int.parse(timeStr.substring(2, 4));
+      final ref = _pivotTime ?? DateTime.now();
+      return DateTime(ref.year, ref.month, ref.day, hour, minute);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _jumpEarlier() {
+    final ref = _pivotTime ?? DateTime.now();
+    final target = ref.subtract(const Duration(minutes: 20));
+    setState(() {
+      _pivotTime = target;
+    });
+    _loadDepartures(isRefresh: false, forceRefresh: false);
+  }
+
+  void _jumpLater() {
+    final ref = _pivotTime ?? DateTime.now();
+    final target = ref.add(const Duration(minutes: 20));
+    setState(() {
+      _pivotTime = target;
+    });
+    _loadDepartures(isRefresh: false, forceRefresh: false);
+  }
+
+  void _resetToNow() {
+    setState(() {
+      _pivotTime = null;
+    });
+    _loadDepartures(isRefresh: false, forceRefresh: false);
+  }
+
+  Future<void> _loadDepartures({bool isRefresh = false, bool forceRefresh = false}) async {
     if (!mounted) return;
 
     // Only show loading spinner on initial load
     if (!isRefresh) {
       setState(() {
         _isLoading = true;
+        _loadingStatus = 'Fetching departures...';
         _error = null;
       });
     }
 
     try {
-      final departures = await _apiService.fetchDepartures(widget.station.crsCode);
+      final departures = await _apiService.fetchDepartures(
+        widget.station.crsCode,
+        forceRefresh: forceRefresh || isRefresh,
+        pivotTime: _pivotTime,
+        onProgress: (status) {
+          if (mounted && !isRefresh) {
+            setState(() {
+              _loadingStatus = status;
+            });
+          }
+        },
+      );
       if (!mounted) return;
+
+      Map<String, List<Departure>> grouped = {};
+      for (var dep in departures) {
+        final platformKey = (dep.platform?.isNotEmpty ?? false) ? dep.platform! : "TBC";
+        grouped.putIfAbsent(platformKey, () => []).add(dep);
+        if (LiveActivityService().isStarred(dep.serviceUid, dep.runDate)) {
+          LiveActivityService().updateFromDeparture(dep);
+        }
+      }
 
       setState(() {
         _departures = departures;
-        _groupDepartures();
+        _groupedDepartures = grouped;
         _isLoading = false;
+        _loadingStatus = null;
         _error = null;
+      });
+    } on RateLimitException catch (_) {
+      if (!mounted) return;
+      _countdownKey.currentState?.stop();
+      setState(() {
+        _isLoading = false;
+        _loadingStatus = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -88,54 +176,64 @@ class _DepartureScreenState extends State<DepartureScreen> {
         setState(() {
           _error = "Failed to load departures: ${e.toString()}";
           _isLoading = false;
+          _loadingStatus = null;
         });
       }
     }
     _countdownKey.currentState?.reset();
   }
 
-  void _groupDepartures() {
-    if (_departures == null) return;
-
-    final platformPattern = RegExp(r'(\d+)');
-    List<String> platforms = _departures!
-        .map((d) => d.serviceType?.trim().toUpperCase() == 'BUS' ? 'BUS' : (d.platform ?? 'TBC'))
-        .where((p) => p.isNotEmpty)
-        .toSet()
-        .toList();
-
-    platforms.sort((a, b) {
-      if (a == b) return 0;
-      if (a == 'BUS') return 1;
-      if (b == 'BUS') return -1;
-      if (a == 'TBC') return 1;
-      if (b == 'TBC') return -1;
-
-      final matchA = platformPattern.firstMatch(a);
-      final matchB = platformPattern.firstMatch(b);
-
-      final numA = matchA != null ? int.tryParse(matchA.group(1)!) ?? 0 : a;
-      final numB = matchB != null ? int.tryParse(matchB.group(1)!) ?? 0 : b;
-
-      if (numA is int && numB is int) {
-        return numA.compareTo(numB);
-      }
-      return a.compareTo(b);
-    });
-
-    Map<String, List<Departure>> grouped = {};
-    for (var platform in platforms) {
-      grouped[platform] = _departures!
-          .where((d) =>
-              (d.serviceType?.trim().toUpperCase() == 'BUS' ? 'BUS' : (d.platform ?? 'TBC')) ==
-              platform)
-          .toList();
-    }
-
-    _groupedDepartures = grouped;
+  Widget _buildPivotTimeBanner() {
+    final formattedTime = _pivotTime != null ? DateFormat('HH:mm').format(_pivotTime!) : '';
+    return Container(
+      color: Theme.of(context).colorScheme.primaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(Icons.schedule, size: 18, color: Theme.of(context).colorScheme.onPrimaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "Viewing departures around $formattedTime",
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: _isLoading ? null : _resetToNow,
+            icon: const Icon(Icons.restore, size: 16),
+            label: const Text("Reset to Now"),
+          ),
+        ],
+      ),
+    );
   }
 
-  void _onDepartureTapped(Departure departure) {
+  Widget _buildTimeJumpButton({required bool isTop}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+          minimumSize: const Size.fromHeight(44),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onPressed: _isLoading ? null : (isTop ? _jumpEarlier : _jumpLater),
+        icon: Icon(
+          isTop ? Icons.arrow_upward : Icons.arrow_downward,
+          size: 18,
+        ),
+        label: Text(
+          isTop ? "Jump to earlier departures" : "Jump to later departures",
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onDepartureTapped(Departure departure) async {
     if (departure.serviceUid.isEmpty && departure.status != 'CANCELLED') {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Cannot track this service."),
@@ -144,7 +242,9 @@ class _DepartureScreenState extends State<DepartureScreen> {
       return;
     }
 
-    Navigator.push(
+    _stopAutoRefresh();
+
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ServiceDetailScreen(
@@ -153,6 +253,10 @@ class _DepartureScreenState extends State<DepartureScreen> {
         ),
       ),
     );
+
+    if (!mounted) return;
+    _loadDepartures(isRefresh: true);
+    _startAutoRefresh();
   }
 
   String _formatTime(String? time) {
@@ -170,9 +274,12 @@ class _DepartureScreenState extends State<DepartureScreen> {
       case "EARLY": return "EARLY";
       case "ON TIME": return "ON TIME";
       case "CANCELLED": return "CANCELLED";
-      case "AT_PLAT": return isGrouped ? "AT PLAT" : "AT PLATFORM";
+      case "AT_PLAT":
+      case "AT_PLATFORM": return isGrouped ? "AT PLAT" : "AT PLATFORM";
       case "APPR_STAT":
-      case "APPR_PLAT": return isGrouped ? "APPR" : "APPROACHING";
+      case "APPR_PLAT":
+      case "APPROACHING": return isGrouped ? "APPR" : "APPROACHING";
+      case "TERMINATES": return isGrouped ? "TERM" : "TERMINATES";
       default:
         return status;
     }
@@ -186,17 +293,38 @@ class _DepartureScreenState extends State<DepartureScreen> {
         appBar: AppBar(
           title: Text("${widget.station.name} Departures"),
           actions: [
+            ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final starred = LiveActivityService().starredServices;
+                if (starred.isEmpty) return const SizedBox.shrink();
+                return IconButton(
+                  icon: Badge(
+                    label: Text('${starred.length}'),
+                    child: const Icon(Icons.star, color: Colors.amber),
+                  ),
+                  tooltip: 'View Starred Live Activities',
+                  onPressed: () => _showStarredServicesModal(context),
+                );
+              },
+            ),
             if (_departures != null && _departures!.isNotEmpty)
               IconButton(
                 icon: Icon(
                   _isGroupingByPlatform ? Icons.access_time : Icons.train,
                 ),
+                tooltip: _isGroupingByPlatform ? "Group by time" : "Group by platform",
                 onPressed: () {
                   setState(() {
                     _isGroupingByPlatform = !_isGroupingByPlatform;
                   });
                 },
               ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () => showSettingsDialog(context),
+            ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: CountdownTimer(
@@ -213,7 +341,27 @@ class _DepartureScreenState extends State<DepartureScreen> {
 
   Widget _buildBody() {
     if (_isLoading && _departures == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              if (_loadingStatus != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _loadingStatus!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     if (_error != null) {
@@ -225,64 +373,127 @@ class _DepartureScreenState extends State<DepartureScreen> {
       );
     }
 
-    if (_departures == null || _departures!.isEmpty) {
-      return const Center(child: Text("No departures found."));
+    final displayDepartures = (_departures ?? []).where((dep) {
+      if (!_prefs.showArrivals && dep.isTerminating) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (_apiService.isRateLimited) {
+      return Column(
+        children: [
+          RateLimitCard(
+            resetTime: _apiService.rateLimitResetTime!,
+            onRetry: () => _loadDepartures(isRefresh: true, forceRefresh: true),
+          ),
+          if (displayDepartures.isNotEmpty)
+            Expanded(
+              child: _isGroupingByPlatform ? _buildGroupedView(displayDepartures) : _buildListView(displayDepartures),
+            ),
+        ],
+      );
     }
 
-    return _isGroupingByPlatform ? _buildGroupedView() : _buildListView();
+    if (displayDepartures.isEmpty) {
+      return const Center(child: Text("No services found for current filters."));
+    }
+
+    return _isGroupingByPlatform ? _buildGroupedView(displayDepartures) : _buildListView(displayDepartures);
   }
 
-  Widget _buildListView() {
+  Widget _buildListView(List<Departure> displayDepartures) {
+    final departuresCount = displayDepartures.length;
+    final itemCount = departuresCount + 2;
+
     return LayoutBuilder(builder: (context, constraints) {
       if (constraints.maxWidth > 600) {
-        return GridView.builder(
-          padding: const EdgeInsets.all(8.0),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 400.0,
-            mainAxisSpacing: 8.0,
-            crossAxisSpacing: 8.0,
-            childAspectRatio: 3.5,
-          ),
-          itemCount: _departures!.length,
-          itemBuilder: (context, index) {
-            return _buildDepartureCard(_departures![index]);
-          },
+        return Column(
+          children: [
+            if (_pivotTime != null) _buildPivotTimeBanner(),
+            _buildTimeJumpButton(isTop: true),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(8.0),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 400.0,
+                  mainAxisSpacing: 8.0,
+                  crossAxisSpacing: 8.0,
+                  childAspectRatio: 3.5,
+                ),
+                itemCount: departuresCount,
+                itemBuilder: (context, index) {
+                  return _buildDepartureCard(displayDepartures[index]);
+                },
+              ),
+            ),
+            _buildTimeJumpButton(isTop: false),
+          ],
         );
       } else {
         return ListView.builder(
-          itemCount: _departures!.length,
+          itemCount: itemCount,
           itemBuilder: (context, index) {
-            return _buildDepartureCard(_departures![index]);
+            if (index == 0) {
+              return Column(
+                children: [
+                  if (_pivotTime != null) _buildPivotTimeBanner(),
+                  _buildTimeJumpButton(isTop: true),
+                ],
+              );
+            }
+            if (index == itemCount - 1) {
+              return _buildTimeJumpButton(isTop: false);
+            }
+            return _buildDepartureCard(displayDepartures[index - 1]);
           },
         );
       }
     });
   }
 
-  Widget _buildGroupedView() {
+  Widget _buildGroupedView(List<Departure> displayDepartures) {
+    Map<String, List<Departure>> displayGrouped = {};
+    for (var dep in displayDepartures) {
+      final platformKey = (dep.platform?.isNotEmpty ?? false) ? dep.platform! : "TBC";
+      displayGrouped.putIfAbsent(platformKey, () => []).add(dep);
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         bool isWide = constraints.maxWidth > 600;
 
         if (isWide) {
-          // Wide layout: Use a wrapping horizontal layout
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
-            child: Wrap(
-              spacing: 16.0,
-              runSpacing: 16.0,
-              children: _groupedDepartures.entries.map((entry) {
-                return _buildPlatformColumn(entry.key, entry.value, isWide: true);
-              }).toList(),
+            child: Column(
+              children: [
+                if (_pivotTime != null) _buildPivotTimeBanner(),
+                _buildTimeJumpButton(isTop: true),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 16.0,
+                  runSpacing: 16.0,
+                  children: displayGrouped.entries.map((entry) {
+                    return _buildPlatformColumn(entry.key, entry.value, isWide: true);
+                  }).toList(),
+                ),
+                const SizedBox(height: 8),
+                _buildTimeJumpButton(isTop: false),
+              ],
             ),
           );
         } else {
-          // Narrow layout: Use a vertical list
           return ListView(
             padding: const EdgeInsets.all(8.0),
-            children: _groupedDepartures.entries.map((entry) {
-              return _buildPlatformColumn(entry.key, entry.value, isWide: false);
-            }).toList(),
+            children: [
+              if (_pivotTime != null) _buildPivotTimeBanner(),
+              _buildTimeJumpButton(isTop: true),
+              ...displayGrouped.entries.map((entry) {
+                return _buildPlatformColumn(entry.key, entry.value, isWide: false);
+              }),
+              _buildTimeJumpButton(isTop: false),
+            ],
           );
         }
       },
@@ -460,20 +671,70 @@ class _DepartureScreenState extends State<DepartureScreen> {
                       ]
                     ] else ...[
                       Text(
-                        departure.operatorName ?? 'Unknown Operator',
+                        formatOperatorStockService(departure.operatorName, departure.stockBranding),
                         style: textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (!isGrouped && departure.status != null && departure.status!.isNotEmpty) ...[
+                      if (departure.isTerminating || (departure.status != null && departure.status!.isNotEmpty)) ...[
                         const SizedBox(height: 4),
-                        _buildStatusTag(departure.status!, isGrouped: isGrouped),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: [
+                            if (departure.isTerminating)
+                              _buildStatusTag("TERMINATES", isGrouped: isGrouped),
+                            if (departure.status != null && departure.status!.isNotEmpty)
+                              _buildStatusTag(departure.status!, isGrouped: isGrouped),
+                          ],
+                        ),
                       ],
                     ]
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              SizedBox(width: 50, child: Center(child: platformWidget)),
+              const SizedBox(width: 8),
+              SizedBox(width: 44, child: Center(child: platformWidget)),
+              ListenableBuilder(
+                listenable: LiveActivityService(),
+                builder: (context, _) {
+                  final liveService = LiveActivityService();
+                  final isStarred = liveService.isStarred(
+                    departure.serviceUid,
+                    departure.runDate,
+                  );
+                  return IconButton(
+                    icon: Icon(
+                      isStarred ? Icons.star : Icons.star_border,
+                      color: isStarred ? Colors.amber : Colors.grey.shade400,
+                    ),
+                    iconSize: 22,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    tooltip: isStarred
+                        ? 'Unstar service (Remove Live Activity)'
+                        : 'Star service (Start Live Activity)',
+                    onPressed: () async {
+                      final newState = await liveService.toggleStar(
+                        departure: departure,
+                        stationName: widget.station.name,
+                        stationCrs: widget.station.crsCode,
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            newState
+                                ? 'Starred ${departure.destination}! Live Activity started.'
+                                : 'Unstarred service.',
+                          ),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -485,19 +746,31 @@ class _DepartureScreenState extends State<DepartureScreen> {
     Color tagColor;
     String statusText = _formatStatusText(status, isGrouped: isGrouped);
 
-    switch (status) {
+    switch (status.toUpperCase()) {
       case "LATE":
       case "EARLY":
       case "ON TIME":
+      case "CALL":
+      case "STARTS":
+      case "PASS":
         return const SizedBox.shrink();
       case "CANCELLED":
         tagColor = Colors.red;
         break;
       case "AT_PLAT":
+      case "AT_PLATFORM":
         tagColor = Colors.blue;
         break;
-      default: // APPR_STAT, APPR_PLAT, etc. TODO: Maybe we can colour code these a little nicer?
+      case "APPR_STAT":
+      case "APPR_PLAT":
+      case "APPROACHING":
         tagColor = Colors.orange;
+        break;
+      case "TERMINATES":
+        tagColor = Colors.purple;
+        break;
+      default:
+        return const SizedBox.shrink();
     }
 
     return Container(
@@ -516,6 +789,138 @@ class _DepartureScreenState extends State<DepartureScreen> {
         ),
         textAlign: TextAlign.center,
       ),
+    );
+  }
+
+  void _showStarredServicesModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          maxChildSize: 0.8,
+          minChildSize: 0.3,
+          builder: (context, scrollController) {
+            return ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final service = LiveActivityService();
+                final starredList = service.starredServices.values.toList();
+                return Container(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.star, color: Colors.amber),
+                              SizedBox(width: 8),
+                              Text(
+                                "Starred Live Activities",
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          if (starredList.isNotEmpty)
+                            TextButton(
+                              onPressed: () async {
+                                await service.clearAll();
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              child: const Text("Clear All"),
+                            ),
+                        ],
+                      ),
+                      const Divider(),
+                      if (starredList.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(32.0),
+                          child: Center(
+                            child: Text(
+                              "No active starred services.\nStar a service to track it as a Live Activity!",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.builder(
+                            controller: scrollController,
+                            itemCount: starredList.length,
+                            itemBuilder: (context, index) {
+                              final item = starredList[index];
+                              final uid = item['serviceUid'] ?? '';
+                              final runDate = item['runDate'] ?? '';
+                              final dest = item['destination'] ?? 'Unknown';
+                              final time = item['scheduledTime'] ?? '';
+                              final realtime = item['realtimeTime'] ?? '';
+                              final plat = item['platform'] ?? '';
+                              final station = item['stationName'] ?? '';
+                              final status = item['status'] ?? '';
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 4.0),
+                                child: ListTile(
+                                  leading: const Icon(Icons.star, color: Colors.amber),
+                                  title: Text(
+                                    "$time to $dest",
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Text(
+                                    "${station.isNotEmpty ? '$station | ' : ''}Plat ${plat.isNotEmpty ? plat : 'TBC'} ${status.isNotEmpty ? '($status)' : ''}",
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                    tooltip: 'Remove Live Activity',
+                                    onPressed: () async {
+                                      await service.unstarService(uid, runDate);
+                                    },
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    final dep = Departure(
+                                      serviceUid: uid,
+                                      runDate: runDate,
+                                      scheduledTime: time,
+                                      realtimeTime: realtime,
+                                      platform: plat,
+                                      operatorName: item['operator'],
+                                      destination: dest,
+                                      origin: item['origin'],
+                                      platformChanged: false,
+                                      status: status,
+                                      serviceType: 'train',
+                                    );
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ServiceDetailScreen(
+                                          station: widget.station,
+                                          departure: dep,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }

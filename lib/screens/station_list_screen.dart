@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import '../models/station.dart';
+import '../models/departure.dart';
+import '../services/live_activity_service.dart';
+import '../widgets/settings_dialog.dart';
 import 'departure_screen.dart';
+import 'service_detail_screen.dart';
 
 class StationListScreen extends StatefulWidget {
   const StationListScreen({super.key});
@@ -113,15 +117,28 @@ class _StationListScreenState extends State<StationListScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        return Future.error('Location permissions are denied');
+        return Future.error('Location permissions are denied.');
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
       return Future.error(
-          'Location permissions are permanently denied, we cannot request permissions.');
+          'Location permissions are permanently denied; cannot request permissions.');
     }
-    return await Geolocator.getCurrentPosition();
+
+    // Try last known position first for quick responsiveness
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        return lastKnown;
+      }
+    } catch (_) {
+      // If last known position fails, continue to get current position
+    }
+
+    return await Geolocator.getCurrentPosition(
+      timeLimit: const Duration(seconds: 10),
+    );
   }
 
   void _filterStations(String query) {
@@ -179,6 +196,21 @@ class _StationListScreenState extends State<StationListScreen> {
         )
       ]
           : [
+        ListenableBuilder(
+          listenable: LiveActivityService(),
+          builder: (context, _) {
+            final starred = LiveActivityService().starredServices;
+            if (starred.isEmpty) return const SizedBox.shrink();
+            return IconButton(
+              icon: Badge(
+                label: Text('${starred.length}'),
+                child: const Icon(Icons.star, color: Colors.amber),
+              ),
+              tooltip: 'View Starred Live Activities',
+              onPressed: () => _showStarredModal(context),
+            );
+          },
+        ),
         IconButton(
           icon: const Icon(Icons.search),
           onPressed: () {
@@ -191,6 +223,11 @@ class _StationListScreenState extends State<StationListScreen> {
           icon: const Icon(Icons.refresh),
           onPressed: _findNearbyStations,
           tooltip: 'Refresh Nearby Stations',
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: () => showSettingsDialog(context),
+          tooltip: 'Settings',
         ),
       ],
     );
@@ -261,6 +298,145 @@ class _StationListScreenState extends State<StationListScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showStarredModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          maxChildSize: 0.8,
+          minChildSize: 0.3,
+          builder: (context, scrollController) {
+            return ListenableBuilder(
+              listenable: LiveActivityService(),
+              builder: (context, _) {
+                final service = LiveActivityService();
+                final starredList = service.starredServices.values.toList();
+                return Container(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.star, color: Colors.amber),
+                              SizedBox(width: 8),
+                              Text(
+                                "Starred Live Activities",
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          if (starredList.isNotEmpty)
+                            TextButton(
+                              onPressed: () async {
+                                await service.clearAll();
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              child: const Text("Clear All"),
+                            ),
+                        ],
+                      ),
+                      const Divider(),
+                      if (starredList.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(32.0),
+                          child: Center(
+                            child: Text(
+                              "No active starred services.\nStar a service from departures to track it as a Live Activity!",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.builder(
+                            controller: scrollController,
+                            itemCount: starredList.length,
+                            itemBuilder: (context, index) {
+                              final item = starredList[index];
+                              final uid = item['serviceUid'] ?? '';
+                              final runDate = item['runDate'] ?? '';
+                              final dest = item['destination'] ?? 'Unknown';
+                              final time = item['scheduledTime'] ?? '';
+                              final realtime = item['realtimeTime'] ?? '';
+                              final plat = item['platform'] ?? '';
+                              final stationName = item['stationName'] ?? '';
+                              final crs = item['stationCrs'] ?? 'LBG';
+                              final status = item['status'] ?? '';
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 4.0),
+                                child: ListTile(
+                                  leading: const Icon(Icons.star, color: Colors.amber),
+                                  title: Text(
+                                    "$time to $dest",
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Text(
+                                    "${stationName.isNotEmpty ? '$stationName | ' : ''}Plat ${plat.isNotEmpty ? plat : 'TBC'} ${status.isNotEmpty ? '($status)' : ''}",
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                    tooltip: 'Remove Live Activity',
+                                    onPressed: () async {
+                                      await service.unstarService(uid, runDate);
+                                    },
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    final dep = Departure(
+                                      serviceUid: uid,
+                                      runDate: runDate,
+                                      scheduledTime: time,
+                                      realtimeTime: realtime,
+                                      platform: plat,
+                                      operatorName: item['operator'],
+                                      destination: dest,
+                                      origin: item['origin'],
+                                      platformChanged: false,
+                                      status: status,
+                                      serviceType: 'train',
+                                    );
+                                    final station = Station(
+                                      crsCode: crs,
+                                      name: stationName.isNotEmpty ? stationName : 'Station',
+                                      latitude: 0,
+                                      longitude: 0,
+                                    );
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ServiceDetailScreen(
+                                          station: station,
+                                          departure: dep,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
